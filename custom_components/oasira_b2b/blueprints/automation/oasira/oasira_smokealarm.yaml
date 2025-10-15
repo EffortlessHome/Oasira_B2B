@@ -1,0 +1,62 @@
+blueprint:
+  name: Smoke Alarm Triggered
+  description: Set the actions to take when a smoke alarm is triggered
+  domain: automation
+  author: Oasira Business
+  input:
+    smokealarm:
+      name: Smoke Alarm Sensor
+      description: The triggering smoke alarm sensor(s)
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - group
+          multiple: true
+    person_input:
+      name: Person
+      description: The person (or people) to notify
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: person
+    notification_message:
+      name: Notification message
+      description: Smoke Detector Activated Message
+      default: Smoke Alarm Activated. Check for fire immediately.
+    data_clickaction_url:
+      name: URL to Navigate (Optional)
+      description:
+        The URL to navigate to when clicking on the notification. (default
+        = /lovelace)
+      default: /lovelace
+    additional_actions:
+      name: Additional Actions
+      description: Add additional actions to execute (Optional)
+      default: []
+      selector:
+        action: {}
+trigger:
+  - platform: state
+    entity_id: !input smokealarm
+    to: "on"
+action:
+  - service: oasira_b2b.notify_person_service
+    data:
+      target: !input person_input
+      message: !input notification_message
+      title: Smoke Alarm Activated
+      data:
+        clickAction: !input data_clickaction_url
+        ttl: 0
+        priority: high
+        url: !input data_clickaction_url
+  - service: oasira_b2b.create_alert_service
+    data:
+      alert_type: Smoke Alarm Activated
+      alert_description: !input notification_message
+      status: Active
+  - choose: []
+    default: !input additional_actions

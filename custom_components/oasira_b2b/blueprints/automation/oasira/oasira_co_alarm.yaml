@@ -1,0 +1,56 @@
+blueprint:
+  name: Carbon Monoxide Alarm Triggered
+  description: Set the actions to take when a carbon monoxide alarm is triggered
+  domain: automation
+  author: Oasira Business
+  input:
+    carbonmonoxidealarm:
+      name: Carbon Monoxide Alarm Sensor
+      description: The triggering carbon monoxide alarm sensor(s)
+      selector:
+        entity:
+          filter:
+            - domain:
+                - binary_sensor
+                - group
+          multiple: true
+    person_input:
+      name: Person
+      description: The person (or people) to notify
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: person
+    notification_message:
+      name: Notification message
+      description: Carbon Monoxide Alarm Message
+      default: Carbon Monoxide Alarm Activated. Get to Safety and Check for CO immediately.
+    additional_actions:
+      name: Additional Actions After
+      description: Add additional actions to execute (Optional)
+      default: []
+      selector:
+        action: {}
+trigger:
+  - platform: state
+    entity_id: !input carbonmonoxidealarm
+    to: "On"
+action:
+  - service: notify.notify
+    data:
+      message: !input notification_message
+  - service: oasira_b2b.notify_person_service
+    data:
+      title: "Carbon Monoxide Alarm"
+      message: !input notification_message
+      target: !input person_input
+      data:
+        priority: high
+  - service: oasira_b2b.create_alert_service
+    data:
+      alert_type: "Carbon Monoxide Alarm"
+      alert_description: !input notification_message
+      status: Active
+  - choose: []
+    default: !input additional_actions
