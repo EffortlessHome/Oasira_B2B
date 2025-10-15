@@ -136,6 +136,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "eh_customer_id": customer_id,
         "eh_system_id": system_id,
         "Content-Type": "application/json; charset=utf-8",
+        "Accept-Encoding": "gzip, deflate, br",  # Avoid zstd
+        "User-Agent": "Oasira-HA/1.0",
     }
 
     async with aiohttp.ClientSession() as session:  
