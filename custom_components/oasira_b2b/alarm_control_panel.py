@@ -6,11 +6,12 @@ from homeassistant.components.alarm_control_panel import (
     AlarmControlPanelState,
 )
 
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 
 from .alarm_common import async_cancelalarm, async_creatependingalarm
-from .const import DOMAIN, ALARM_TYPE_SECURITY, VERSION, DOMAIN
+from .const import DOMAIN, ALARM_TYPE_SECURITY, VERSION
 
 CONF_HOME_MODE_NAME = "home"
 CONF_AWAY_MODE_NAME = "away"
@@ -25,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_entitie
     hass = hass
     async_add_entities([AlarmControlPanel(hass)], True)
 
-class AlarmControlPanel(AlarmControlPanelEntity):
+class AlarmControlPanel(AlarmControlPanelEntity, RestoreEntity):
     """Representation of an alarm control panel."""
 
     _attr_supported_features = (
@@ -104,3 +105,10 @@ class AlarmControlPanel(AlarmControlPanelEntity):
     def icon(self):
         # Return the specified icon or a default one
         return "mdi:shield-lock-outline"
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._alarmstate = last_state.state

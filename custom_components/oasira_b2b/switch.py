@@ -15,6 +15,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import UndefinedType
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .auto_area import AutoArea
 from .const import DOMAIN
@@ -67,7 +68,7 @@ async def async_setup_entry(
     async_add_entities([PresenceSimulationSwitch(hass)])
 
 
-class MedicalAlertAlarmSwitch(SwitchEntity):
+class MedicalAlertAlarmSwitch(SwitchEntity, RestoreEntity):
     """Set up a medical alert alarm switch."""
 
     _attr_should_poll = False
@@ -127,7 +128,14 @@ class MedicalAlertAlarmSwitch(SwitchEntity):
             {"is_on": self._is_on}
         )
 
-class MonitoringAlarmSwitch(SwitchEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"        
+
+class MonitoringAlarmSwitch(SwitchEntity, RestoreEntity):
     """Set up a monitoring alert alarm switch."""
 
     _attr_should_poll = False
@@ -191,6 +199,13 @@ class MonitoringAlarmSwitch(SwitchEntity):
             {"is_on": self._is_on}
         )        
 
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"        
+
 class PresenceSimulationSwitch(SwitchEntity, RestoreEntity):
     """Set up a presence simulation switch."""
 
@@ -229,6 +244,12 @@ class PresenceSimulationSwitch(SwitchEntity, RestoreEntity):
         self._is_on = False
         self.schedule_update_ha_state()
 
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"
 
     def replay_lights(self):
         """Replay the light states from the prior day with correct timing."""

@@ -63,3 +63,10 @@ class MotionNotificationsSwitch(SwitchEntity):
         _LOGGER.info("%s: Motion notifications turned off", self.auto_area.area_name)
         self._is_on = False
         self.schedule_update_ha_state()
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"

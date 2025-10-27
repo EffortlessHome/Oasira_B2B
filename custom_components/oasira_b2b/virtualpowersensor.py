@@ -17,13 +17,15 @@ from homeassistant.helpers.event import async_track_state_change
 from homeassistant.helpers.entity import async_generate_entity_id
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.restore_state import RestoreEntity
+
 from random import uniform
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-class VirtualPowerSensor(SensorEntity):
+class VirtualPowerSensor(SensorEntity, RestoreEntity):
     """Representation of a Virtual Power Sensor."""
 
     # Device Type	Approx. Wattage
@@ -91,7 +93,14 @@ class VirtualPowerSensor(SensorEntity):
         )
         self.update_virtual_power()
 
-class VirtualPowerSensorAlwaysOn(SensorEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._state = last_state.state    
+
+class VirtualPowerSensorAlwaysOn(SensorEntity, RestoreEntity):
     """Representation of a Virtual Power Sensor."""
 
     def __init__(self, hass: HomeAssistant, entity_id: str, watts: float):
@@ -136,7 +145,14 @@ class VirtualPowerSensorAlwaysOn(SensorEntity):
         )
         self.update_virtual_power()
 
-class FakeDeviceVirtualPowerSensor(SensorEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._state = last_state.state    
+
+class FakeDeviceVirtualPowerSensor(SensorEntity, RestoreEntity):
     """Representation of a fake device virtual power sensor."""
 
     def __init__(self, device_type: str, min_wattage: float, max_wattage: float):
@@ -174,8 +190,14 @@ class FakeDeviceVirtualPowerSensor(SensorEntity):
         """Simulate a power usage value."""
         self._state = round(uniform(self._min_wattage, self._max_wattage), 2)
 
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
 
-class TotalEnergySensor(SensorEntity):
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._state = last_state.state    
+
+class TotalEnergySensor(SensorEntity, RestoreEntity):
     """Representation of a total energy sensor."""
 
     def __init__(self, hass: HomeAssistant):
@@ -241,3 +263,11 @@ class TotalEnergySensor(SensorEntity):
 
         # Convert watts to kilowatts and calculate energy usage
         self._state = round(total_watts / 1000, 2)
+
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._state = last_state.state

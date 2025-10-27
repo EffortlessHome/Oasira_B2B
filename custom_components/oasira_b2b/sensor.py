@@ -18,6 +18,7 @@ from homeassistant.helpers.entity_platform import async_get_platforms
 from homeassistant.helpers.event import async_track_state_change
 from homeassistant.helpers.entity import async_generate_entity_id
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers import entity_registry as er
 from .virtualpowersensor import (
     VirtualPowerSensor,
@@ -117,7 +118,7 @@ async def _load_virtual_devices(hass, file_path):
 
     return await hass.async_add_executor_job(read_file)
 
-class AlarmIDSensor(SensorEntity):
+class AlarmIDSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -153,7 +154,7 @@ class AlarmIDSensor(SensorEntity):
         except:
             self._state = ""
 
-class AlarmCreateMessageSensor(SensorEntity):
+class AlarmCreateMessageSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -190,7 +191,7 @@ class AlarmCreateMessageSensor(SensorEntity):
         except:
             self._state = ""
 
-class AlarmOwnerIDSensor(SensorEntity):
+class AlarmOwnerIDSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -229,7 +230,7 @@ class AlarmOwnerIDSensor(SensorEntity):
             self._state = ""
 
 
-class AlarmStatusSensor(SensorEntity):
+class AlarmStatusSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -267,7 +268,7 @@ class AlarmStatusSensor(SensorEntity):
             self._state = ""
 
 
-class AlarmLastEventSensor(SensorEntity):
+class AlarmLastEventSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -306,7 +307,7 @@ class AlarmLastEventSensor(SensorEntity):
             self._state = ""
 
 
-class AverageHumiditySensor(SensorEntity):
+class AverageHumiditySensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -387,7 +388,7 @@ class AverageHumiditySensor(SensorEntity):
             self._state = -1
 
 
-class AverageTemperatureSensor(SensorEntity):
+class AverageTemperatureSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -465,7 +466,7 @@ class AverageTemperatureSensor(SensorEntity):
             self._state = -1
 
 
-class VirtualIlluminanceSensor(SensorEntity):
+class VirtualIlluminanceSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -570,7 +571,7 @@ class VirtualIlluminanceSensor(SensorEntity):
             self._state = 1000
 
 
-class HighTemperatureTomorrowSensor(SensorEntity):
+class HighTemperatureTomorrowSensor(SensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -622,7 +623,7 @@ class HighTemperatureTomorrowSensor(SensorEntity):
             self._state = forecast[1]["temperature"]
 
 
-class ConfigSensor(SensorEntity):
+class ConfigSensor(SensorEntity, RestoreEntity):
     def __init__(self, key, state):
         self._key = key
         self._state = state

@@ -6,13 +6,14 @@ import logging
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import UndefinedType
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .auto_area import AutoArea
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-class MedicationTrackingSwitch(SwitchEntity):
+class MedicationTrackingSwitch(SwitchEntity, RestoreEntity):
     """Set up a medication tracking switch."""
 
     _attr_should_poll = False
@@ -60,3 +61,10 @@ class MedicationTrackingSwitch(SwitchEntity):
         _LOGGER.info("%s: medication tracking turned off", self.auto_area.area_name)
         self._is_on = False
         self.schedule_update_ha_state()
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"

@@ -37,7 +37,9 @@
     "google-api-python-client>=2.126.0",
     "gTTS>=2.5.0",
     "google-genai==1.29.0",
-    "influxdb-client>=1.48.0"
+    "influxdb-client>=1.48.0",
+    "aiohttp",
+    "pyjwt"
   ],
   "version": "1.0"
 }

@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.area_registry import async_get as async_get_area_registry
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .alarm_common import async_cancelalarm, async_creatependingalarm
 from .const import ALARM_TYPE_MED_ALERT, ALARM_TYPE_MONITORING
@@ -106,7 +107,7 @@ class HASSComponent:
         return cls.hass_instance
 
 
-class SecurityMotionGroup(BinarySensorEntity):
+class SecurityMotionGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -151,7 +152,7 @@ class SecurityMotionGroup(BinarySensorEntity):
         else:
             sensor_state = "unknown"
 
-class WindowGroup(BinarySensorEntity):
+class WindowGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -197,7 +198,7 @@ class WindowGroup(BinarySensorEntity):
             sensor_state = "unknown"
 
 
-class DoorGroup(BinarySensorEntity):
+class DoorGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -243,7 +244,7 @@ class DoorGroup(BinarySensorEntity):
             sensor_state = "unknown"
 
 
-class CarbonMonoxideGroup(BinarySensorEntity):
+class CarbonMonoxideGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -289,7 +290,7 @@ class CarbonMonoxideGroup(BinarySensorEntity):
             sensor_state = "unknown"
 
 
-class MoistureGroup(BinarySensorEntity):
+class MoistureGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -335,7 +336,7 @@ class MoistureGroup(BinarySensorEntity):
             sensor_state = "unknown"
 
 
-class SmokeGroup(BinarySensorEntity):
+class SmokeGroup(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     @property
@@ -381,7 +382,7 @@ class SmokeGroup(BinarySensorEntity):
             sensor_state = "unknown"
 
 
-class BinaryMedAlertSensor(BinarySensorEntity):
+class BinaryMedAlertSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     async def async_added_to_hass(self):
@@ -443,7 +444,7 @@ class BinaryMedAlertSensor(BinarySensorEntity):
             await async_cancelalarm(hass)
 
 
-class MonitoringAlarm(BinarySensorEntity):
+class MonitoringAlarm(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     async def async_added_to_hass(self):
@@ -507,7 +508,7 @@ class MonitoringAlarm(BinarySensorEntity):
             await async_cancelalarm(hass)
 
 
-class SleepingSensor(BinarySensorEntity):
+class SleepingSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     async def async_added_to_hass(self):
@@ -562,7 +563,7 @@ class SleepingSensor(BinarySensorEntity):
             self._state = "off"
 
 
-class SomeoneHomeSensor(BinarySensorEntity):
+class SomeoneHomeSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -643,7 +644,7 @@ class SomeoneHomeSensor(BinarySensorEntity):
             self._state = "off"
 
 
-class RenterOccupiedSensor(BinarySensorEntity):
+class RenterOccupiedSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -689,7 +690,7 @@ class RenterOccupiedSensor(BinarySensorEntity):
             self._state = "off"
 
 
-class MedicationTrackingSensor(BinarySensorEntity):
+class MedicationTrackingSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self, entityname) -> None:
@@ -737,7 +738,7 @@ class MedicationTrackingSensor(BinarySensorEntity):
             self._state = "off"
 
 
-class MotionNotifcationSensor(BinarySensorEntity):
+class MotionNotifcationSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self) -> None:
@@ -783,7 +784,7 @@ class MotionNotifcationSensor(BinarySensorEntity):
             self._state = "off"
 
 
-class SmartApplianceSensor(BinarySensorEntity):
+class SmartApplianceSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
 
     def __init__(self, entityname) -> None:
@@ -835,7 +836,7 @@ class SmartApplianceSensor(BinarySensorEntity):
             _LOGGER.info(f"The state of {entity_id} cannnot be determined")
             self._state = "off"
 
-class InBedSensor(BinarySensorEntity):
+class InBedSensor(BinarySensorEntity, RestoreEntity):
     def __init__(self, area_id: str):
         self._attr_name = f"{area_id} In Bed Sensor"
         self._attr_unique_id = f"{area_id}_in_bed_sensor"

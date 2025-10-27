@@ -4,6 +4,7 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 import logging
 
 from . import const
@@ -24,7 +25,7 @@ async def async_setup_entry(
     async_add_entities([AISafetySuggestionTextEntity()], True)
     async_add_entities([AIHomeStatusTextEntity()], True)
 
-class AIAutomationSuggestionTextEntity(TextEntity):
+class AIAutomationSuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -40,7 +41,14 @@ class AIAutomationSuggestionTextEntity(TextEntity):
         self._value = value
         self.async_write_ha_state()
 
-class AIWellnessSuggestionTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    
+
+class AIWellnessSuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -56,7 +64,14 @@ class AIWellnessSuggestionTextEntity(TextEntity):
         self._value = value
         self.async_write_ha_state()  
 
-class AIEnergySuggestionTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    
+
+class AIEnergySuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -72,7 +87,14 @@ class AIEnergySuggestionTextEntity(TextEntity):
         self._value = value
         self.async_write_ha_state()  
 
-class AIMaintenanceSuggestionTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    
+
+class AIMaintenanceSuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -88,7 +110,14 @@ class AIMaintenanceSuggestionTextEntity(TextEntity):
         self._value = value
         self.async_write_ha_state()          
 
-class AIClimateSuggestionTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    
+
+class AIClimateSuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -102,9 +131,16 @@ class AIClimateSuggestionTextEntity(TextEntity):
 
     async def async_set_value(self, value: str) -> None:
         self._value = value
-        self.async_write_ha_state()                  
+        self.async_write_ha_state()      
 
-class AISafetySuggestionTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state                        
+
+class AISafetySuggestionTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -120,7 +156,14 @@ class AISafetySuggestionTextEntity(TextEntity):
         self._value = value
         self.async_write_ha_state()                          
 
-class AIHomeStatusTextEntity(TextEntity):
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    
+
+class AIHomeStatusTextEntity(TextEntity, RestoreEntity):
     """A simple text entity that allows getting and setting a value."""
 
     def __init__(self):
@@ -135,3 +178,10 @@ class AIHomeStatusTextEntity(TextEntity):
     async def async_set_value(self, value: str) -> None:
         self._value = value
         self.async_write_ha_state()                          
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._value = last_state.state    

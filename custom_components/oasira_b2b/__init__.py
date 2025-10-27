@@ -24,6 +24,9 @@ from homeassistant.components.notify import BaseNotificationService
 from homeassistant.config import get_default_config_dir
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.discovery import async_load_platform
+from homeassistant.core import ServiceCall
+
+from .energy_advisor import async_setup_energy_advisor
 
 import homeassistant.core
 from homeassistant.core import (
@@ -91,7 +94,21 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.components import person
 
+try:
+    # Older versions (pre-2025)
+    from homeassistant.components.device_tracker import SOURCE_TYPE_GPS
+except ImportError:
+    # Newer versions (2025+)
+    SOURCE_TYPE_GPS = "gps"
+
 from aiohttp import web
+
+LOCATION_SERVICE_SCHEMA = vol.Schema({
+    vol.Required("device_id"): str,
+    vol.Required("latitude"): float,
+    vol.Required("longitude"): float,
+    vol.Optional("accuracy"): float,
+})
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -220,6 +237,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     register_services(hass)
 
+    await async_register_notification_services(hass)
+    await async_register_location_service(hass)
+
     # Initialize the Motion Sensor Grouper
     grouper = MotionSensorGrouper(hass)
 
@@ -238,6 +258,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Label already exists → ignore
             _LOGGER.info("Label already exists: %s", desired)
     
+    await async_setup_energy_advisor(hass)
+
     async def after_home_assistant_started(event):
         """Call this function after Home Assistant has started."""
         await loaddevicegroups(None)
@@ -273,29 +295,29 @@ async def deploy_latest_config(hass: HomeAssistant):
     target_dashboard_dir = "/config/dashboards"
 
     # Ensure destination directories exist
-    os.makedirs(target_themes_dir, exist_ok=True)
-    os.makedirs(target_dir, exist_ok=True)
+    #os.makedirs(target_themes_dir, exist_ok=True)
+    #os.makedirs(target_dir, exist_ok=True)
     os.makedirs(target_blueprints_dir, exist_ok=True)
-    os.makedirs(target_packages_dir, exist_ok=True)
-    os.makedirs(target_dashboard_dir, exist_ok=True)
+    #os.makedirs(target_packages_dir, exist_ok=True)
+    #os.makedirs(target_dashboard_dir, exist_ok=True)
 
     # Copy entire themes directory including subfolders and files
-    if os.path.exists(source_themes_dir):
-        shutil.copytree(source_themes_dir, target_themes_dir, dirs_exist_ok=True)
+    #if os.path.exists(source_themes_dir):
+    #    shutil.copytree(source_themes_dir, target_themes_dir, dirs_exist_ok=True)
 
-    if os.path.exists(source_packages_dir):
-        shutil.copytree(source_packages_dir, target_packages_dir, dirs_exist_ok=True)
+    #if os.path.exists(source_packages_dir):
+    #    shutil.copytree(source_packages_dir, target_packages_dir, dirs_exist_ok=True)
 
     if os.path.exists(source_blueprints_dir):
         shutil.copytree(
             source_blueprints_dir, target_blueprints_dir, dirs_exist_ok=True
         )
 
-    if os.path.exists(source_dir):
-        shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+    #if os.path.exists(source_dir):
+    #    shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
 
-    if os.path.exists(source_dashboard_dir):
-        shutil.copytree(source_dashboard_dir, target_dashboard_dir, dirs_exist_ok=True)
+    #if os.path.exists(source_dashboard_dir):
+    #    shutil.copytree(source_dashboard_dir, target_dashboard_dir, dirs_exist_ok=True)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
@@ -601,8 +623,6 @@ async def cleanmotionfiles(calldata):
     else:
         _LOGGER.error(f"Error deleting snapshots: {process.stderr.decode()}")
 
-from homeassistant.helpers import entity_registry
-from homeassistant.components import person
 
 async def async_send_message(calldata):
     """Send a notification message only to a person’s Mobile App device trackers."""
@@ -1144,3 +1164,59 @@ async def install_cloudflared():
     except Exception as exc:
         _LOGGER.exception("Error running cloudflared install: %s", exc)
         return False
+
+async def async_register_notification_services(hass):
+    """Register Oasira Firebase helper services."""
+
+    notify_service = hass.data.get("notify.oasira_firebase")
+
+    async def handle_register_token(call: ServiceCall):
+        token = call.data.get("token")
+        if not token:
+            _LOGGER.warning("register_token called with no token")
+            return
+        if not notify_service:
+            _LOGGER.error("Oasira Firebase notify service not found")
+            return
+        await notify_service.register_token(token)
+        _LOGGER.info("Registered new FCM token: %s", token[:12] + "...")
+
+    hass.services.async_register(
+        "oasira_b2b",
+        "register_token",
+        handle_register_token,
+        schema=vol.Schema({vol.Required("token"): str}),
+    )        
+
+async def async_register_location_service(hass):
+    """Register Oasira location update service."""
+
+    async def handle_update_location(call):
+        device_id = call.data["device_id"]
+        lat = call.data["latitude"]
+        lon = call.data["longitude"]
+        accuracy = call.data.get("accuracy", 30.0)
+
+        entity_id = f"device_tracker.{device_id.lower()}"
+
+        # Update or create entity
+        hass.states.async_set(
+            entity_id,
+            "home",  # You can change this dynamically later
+            {
+                "latitude": lat,
+                "longitude": lon,
+                "gps_accuracy": accuracy,
+                "source_type": SOURCE_TYPE_GPS,
+                "friendly_name": f"Oasira {device_id.title()}",
+            },
+        )
+
+        _LOGGER.info("Updated Oasira device %s: (%f, %f)", device_id, lat, lon)
+
+    hass.services.async_register(
+        "oasira_b2b",
+        "update_location",
+        handle_update_location,
+        schema=LOCATION_SERVICE_SCHEMA,
+    )    

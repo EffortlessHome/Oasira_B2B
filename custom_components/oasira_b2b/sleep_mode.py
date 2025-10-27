@@ -8,13 +8,13 @@ import logging
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import UndefinedType
-
+from homeassistant.helpers.restore_state import RestoreEntity
 from .auto_area import AutoArea
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
-class SleepModeSwitch(SwitchEntity):
+class SleepModeSwitch(SwitchEntity, RestoreEntity):
     """Set up a sleep mode switch."""
 
     _attr_should_poll = False
@@ -75,3 +75,10 @@ class SleepModeSwitch(SwitchEntity):
             "sleeping_switch_updated",
             {"is_on": self._is_on}
         ) 
+
+    async def async_added_to_hass(self):
+        """Restore previous state when entity is added."""
+        await super().async_added_to_hass()
+
+        if (last_state := await self.async_get_last_state()) is not None:
+            self._is_on = last_state.state == "on"
