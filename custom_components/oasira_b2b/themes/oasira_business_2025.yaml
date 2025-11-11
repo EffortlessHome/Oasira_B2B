@@ -1,0 +1,125 @@
+Oasira Business Light:
+  # ---------- Primary Colors ----------
+  primary-color: "#77abf7"            # Accent Blue
+  accent-color: "#5590e0"             # Darker Accent Blue
+  primary-background-color: "#ffffff" # Main background
+  secondary-background-color: "#f2f2f2" 
+  paper-card-background-color: "#ffffff"
+  paper-card-header-color: "#2d2d2d"
+  paper-item-icon-color: "#304563"
+  paper-listbox-background-color: "#f2f2f2"
+  label-badge-background-color: "#77abf7"
+  primary-text-color: "#2d2d2d"
+  secondary-text-color: "#555555"
+  disabled-text-color: "rgba(45,45,45,0.5)"
+
+  # ---------- Card Styling ----------
+  paper-card-box-shadow: "0 6px 20px rgba(0,0,0,0.12)"
+  paper-card-border-radius: "24px"
+  paper-dialog-background-color: "#ffffff"
+  paper-dialog-color: "#2d2d2d"
+
+  # ---------- Sidebar ----------
+  sidebar-background-color: "#f2f2f2"
+  sidebar-icon-color: "#2d2d2d"
+  sidebar-text-color: "#2d2d2d"
+  sidebar-selected-background-color: "#77abf7"
+  sidebar-selected-icon-color: "#ffffff"
+  sidebar-selected-text-color: "#ffffff"
+
+  # ---------- Switches / Toggles ----------
+  paper-toggle-button-checked-button-color: "#77abf7"
+  paper-toggle-button-checked-bar-color: "#aacbfa"
+  paper-toggle-button-unchecked-button-color: "#ffffff"
+  paper-toggle-button-unchecked-bar-color: "#cccccc"
+
+  # ---------- Sliders / Inputs ----------
+  paper-slider-knob-color: "#77abf7"
+  paper-slider-active-color: "#aacbfa"
+  paper-slider-container-color: "rgba(0,0,0,0.15)"
+
+  # ---------- Badges ----------
+  label-badge-text-color: "#ffffff"
+  label-badge-red: "#ff6b6b"
+  label-badge-green: "#77abf7"
+  label-badge-blue: "#aacbfa"
+
+  # ---------- Header ----------
+  app-header-background-color: "#ffffff"
+  app-header-text-color: "#2d2d2d"
+
+  # ---------- State Colors ----------
+  state-icon-color: "#2d2d2d"
+  state-icon-active-color: "#77abf7"
+  state-icon-unavailable-color: "rgba(45,45,45,0.35)"
+
+  # ---------- Card Details ----------
+  ha-card-background: "#ffffff"
+  ha-card-border-radius: "24px"
+  ha-card-box-shadow: "0 6px 20px rgba(0,0,0,0.12)"
+  ha-card-color: "#2d2d2d"
+  ha-label-badge-background: "#77abf7"
+  ha-label-badge-text-color: "#ffffff"
+
+Oasira Home Dark:
+  # ---------- Primary Colors ----------
+  primary-color: "#5590e0"             # Darker Accent Blue
+  accent-color: "#77abf7"              # Lighter Accent Blue
+  primary-background-color: "#121212"  # Dark background
+  secondary-background-color: "#1e1e1e"
+  paper-card-background-color: "#1e1e1e"
+  paper-card-header-color: "#ffffff"
+  paper-item-icon-color: "#77abf7"
+  paper-listbox-background-color: "#1e1e1e"
+  label-badge-background-color: "#5590e0"
+  primary-text-color: "#ffffff"
+  secondary-text-color: "#cccccc"
+  disabled-text-color: "rgba(255,255,255,0.5)"
+
+  # ---------- Card Styling ----------
+  paper-card-box-shadow: "0 6px 20px rgba(0,0,0,0.5)"
+  paper-card-border-radius: "24px"
+  paper-dialog-background-color: "#1e1e1e"
+  paper-dialog-color: "#ffffff"
+
+  # ---------- Sidebar ----------
+  sidebar-background-color: "#1e1e1e"
+  sidebar-icon-color: "#ffffff"
+  sidebar-text-color: "#ffffff"
+  sidebar-selected-background-color: "#77abf7"
+  sidebar-selected-icon-color: "#ffffff"
+  sidebar-selected-text-color: "#ffffff"
+
+  # ---------- Switches / Toggles ----------
+  paper-toggle-button-checked-button-color: "#77abf7"
+  paper-toggle-button-checked-bar-color: "#5590e0"
+  paper-toggle-button-unchecked-button-color: "#555555"
+  paper-toggle-button-unchecked-bar-color: "#333333"
+
+  # ---------- Sliders / Inputs ----------
+  paper-slider-knob-color: "#77abf7"
+  paper-slider-active-color: "#5590e0"
+  paper-slider-container-color: "rgba(255,255,255,0.15)"
+
+  # ---------- Badges ----------
+  label-badge-text-color: "#ffffff"
+  label-badge-red: "#ff6b6b"
+  label-badge-green: "#77abf7"
+  label-badge-blue: "#5590e0"
+
+  # ---------- Header ----------
+  app-header-background-color: "#1e1e1e"
+  app-header-text-color: "#ffffff"
+
+  # ---------- State Colors ----------
+  state-icon-color: "#ffffff"
+  state-icon-active-color: "#77abf7"
+  state-icon-unavailable-color: "rgba(255,255,255,0.35)"
+
+  # ---------- Card Details ----------
+  ha-card-background: "#1e1e1e"
+  ha-card-border-radius: "24px"
+  ha-card-box-shadow: "0 6px 20px rgba(0,0,0,0.5)"
+  ha-card-color: "#ffffff"
+  ha-label-badge-background: "#77abf7"
+  ha-label-badge-text-color: "#ffffff"

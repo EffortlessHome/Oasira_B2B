@@ -1,0 +1,312 @@
+    ### Offers ######
+    - type: grid
+        columns: 2
+        cards:
+          - type: heading
+            heading: Offers             
+
+          - type: vertical-stack
+            cards:
+              - type: picture-elements
+                elements:
+                  - type: action-button
+                    style:
+                      left: 50%
+                      top: 90%
+                    action: input_button.press
+                    title: Activate For Free
+                image: /local/oasira/oasira_artwork2.png
+                title: Get 1 month of Premium now!
+
+            card_mod:
+              style: |
+                ha-card {
+                  overflow-x: auto !important;
+                  scrollbar-width: thin;
+                }
+                .swiper-container {
+                  overflow-x: auto !important;
+                }
+
+    
+    
+    ### AI Conversation Card ###
+      - type: grid
+        columns: 1
+        cards:
+          - type: custom:button-card
+            entity: conversation.home_assistant #conversation.oasira_b2c_ai
+            name:_b2c AI
+            show_name: false
+            show_state: false
+            show_icon: false
+            show_label: false
+            tap_action:
+              action: conversation.home_assistant #conversation.oasira_b2c_ai
+            styles:
+              grid:
+                - grid-template-areas: '"n ." "l ."'
+                - grid-template-columns: 1fr min-content
+                - grid-template-rows: 1fr min-content
+              card:
+                - padding: 32px
+                - background: white
+                - height: 200px
+              name:
+                - justify-self: start
+                - align-self: end
+                - margin: 0 0 0 8px
+                - font-size: 16px
+                - font-weight: 500
+                - color: black
+                - opacity: 0.66
+                - z-index: 1
+              label:
+                - justify-self: start
+                - align-self: end
+                - margin: 0 0 8px 8px
+                - font-size: 24px
+                - font-weight: 500
+                - color: black
+                - z-index: 1
+              custom_fields:
+                custom_html:
+                  - position: absolute
+                  - left: 0
+                  - top: 0
+                  - right: 0
+                  - bottom: 0
+                  - z-index: 0
+            custom_fields:
+              custom_html: |
+                [[[
+                  return `
+                  <div class="container">
+                    <div id="chatbot">
+                      <div class="dot"></div>
+                      <div class="dot"></div>
+                      <div class="dot"></div>
+                    </div>
+                    <div id="chatbot-corner"></div>
+                    <div id="antenna">
+                      <div id="beam"></div>
+                      <div id="beam-pulsar"></div>
+                    </div>
+                  </div>
+                  `
+                ]]]
+            extra_styles: |
+              .container {
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                height: 200px;
+                width: 200px;
+                animation: up-down 7.5s infinite ease-in-out;
+              }
+              #chatbot {
+                position: absolute;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                width: 150px;
+                height: 85px;
+                border: 12px solid #3D3E45;
+                border-radius: 80px;
+              }
+              #chatbot-corner {
+                position: absolute;
+                top: 140px;
+                left: 55px;
+                width: 0;
+                height: 0;
+                border-left: 20px solid transparent;
+                border-right: 20px solid transparent;
+                border-top: 25px solid #3D3E45;
+                transform: rotate(140deg);
+              }
+              #antenna {
+                position: absolute;
+                top: 25px;
+                left: 100px;
+                height: 20px;
+                width: 10px;
+                background-color: #3D3E45;
+                animation: antenna-appear 7.5s infinite ease-in-out;
+              }
+              #beam {
+                position: absolute;
+                top: -12px;
+                left: -5px;
+                height: 20px;
+                width: 20px;
+                border-radius: 50%;
+                background-color: #3D3E45;
+                animation: beam-appear 7.5s infinite ease-in-out;
+              }
+              #beam-pulsar {
+                position: absolute;
+                top: -12px;
+                left: -5px;
+                height: 20px;
+                width: 20px;
+                border-radius: 50%;
+                background-color: #3D3E45;
+                animation: beam-pulsar-appear 7.5s infinite ease-in-out;
+              }
+              .dot {
+                height: 17.5px;
+                width: 17.5px;
+                position: absolute;
+                top: 50%;
+                background-color: #3D3E45;
+                border-radius: 50%;
+                animation: pulse-outer 7.5s infinite ease-in-out;
+              }
+              .dot:nth-child(1) {
+                left: 30px;
+                transform: translateY(-50%);
+              }
+              .dot:nth-child(2) {
+                left: 75px;
+                transform: translate(-50%, -50%);
+                animation: pulse-inner 7.5s infinite ease-in-out;
+                animation-delay: 0.2s;
+              }
+              .dot:nth-child(3) {
+                right: 30px;
+                transform: translateY(-50%);
+                animation-delay: 0.4s;
+              }
+              @keyframes pulse-inner {
+                0% { transform: translate(-50%, -50%) scale(1); }
+                7.5% { transform: translate(-50%, -50%) scale(1.5); }
+                15% { transform: translate(-50%, -50%) scale(1); }
+                22.5% { transform: translate(-50%, -50%) scale(1.5); }
+                30% { transform: translate(-50%, -50%) scale(1); }
+                37.5% { transform: translate(-50%, -50%) scale(1.5); }
+                45% { transform: translate(-50%, -50%) scale(1) rotate(-360deg); height: 17.5px; border-radius: 50%; }
+                50% { transform: translate(-50%, 100%) scale(1.5) rotate(10deg); height: 10px; border-radius: 50% 50% 48px 48px / 50% 50% 30px 30px; }
+                55% { transform: translate(-50%, 100%) scale(1.5) rotate(-10deg); }
+                60% { transform: translate(-50%, 100%) scale(1.5) rotate(10deg); }
+                65% { transform: translate(-50%, 100%) scale(1.5) rotate(0deg); }
+                85% { transform: translate(-50%, 100%) scale(1.5) rotate(0deg); height: 10px; border-radius: 50% 50% 48px 48px / 50% 50% 30px 30px; }
+                92.5% { transform: translate(-50%, 100%) scale(1.5)rotate(0deg); height: 10px; border-radius: 50% 50% 40px 40px / 50% 50% 25px 25px; }
+                95% { transform: translate(-50%, -40%) scale(1.5)rotate(-360deg); height: 17.5px; border-radius: 50%; }
+                100{ transform: translate(-50%, -50%) scale(1); }
+              }
+              @keyframes pulse-outer {
+                0% { transform: translateY(-50%) scale(1); }
+                7.5% { transform: translateY(-50%) scale(1.5); }
+                15% { transform: translateY(-50%) scale(1); }
+                22.5% { transform: translateY(-50%) scale(1.5); }
+                30% { transform: translateY(-50%) scale(1); }
+                37.5% { transform: translateY(-50%) scale(1.5); }
+                45% { transform: translateY(-50%) scale(1); height: 17.5px; }
+                55% { transform: translateY(-50%) scale(1); height: 5px; }
+                60% { height: 17.5px; }
+                75% { height: 17.5px; }
+                80% { transform: translateY(-50%) scale(1); height: 5px; }
+                85% { height: 17.5px; }
+                100% { height: 17.5px; }
+              }
+              @keyframes antenna-appear {
+                0% { visibility: hidden; top: 45px; height: 0 }
+                50% { visibility: hidden; top: 45px; height: 0 }
+                55% { visibility: visible; top: 25px; height: 20px; }
+                95% { visibility: visible; top: 25px; height: 20px; }
+                100% { top: 45px; height: 0; }
+              }
+              @keyframes beam-appear {
+                0% { visibility: hidden; top: -12px; height: 0 }
+                50% { visibility: hidden; top: -12px; height: 0 }
+                55% { visibility: visible; top: -12px; height: 20px; width: 20px; }
+                100% { visibility: visible; top: -12px; height: 20px; width: 20px; }
+              }
+              @keyframes beam-pulsar-appear {
+                0% { visibility:hidden; top: -12px; height: 0 }
+                50% { visibility: hidden; top: -12px; height: 0 }
+                55% { visibility: visible; top: -12px; left: -5px; height: 20px; width: 20px; opacity: 1 }
+                65% { top: -25px; left: -15px; height: 40px; width: 40px; opacity: 0; visibility: visible; }
+                74% { visibility: hidden; opacity: 0; }
+                75% { visibility: visible; top: -12px; left: -5px; height: 20px; width: 20px; opacity: 1 }
+                85% { top: -25px; left: -15px; height: 40px; width: 40px; opacity: 0; visibility: visible; }
+                94% { visibility: hidden; opacity: 0; }
+                100% { visibility: hidden; opacity: 0; }
+              }
+              @keyframes up-down {
+                0% { transform: translate(-50%, -50%); }
+                12.5% { transform: translate(-50%, -48%); }
+                25% { transform: translate(-50%, -50%); }
+                37.5% { transform: translate(-50%, -48%); }
+                50% { transform: translate(-50%, -50%); }
+                62.5% { transform: translate(-50%, -48%); }
+                75% { transform: translate(-50%, -50%); }
+                87.5% { transform: translate(-50%, -48%); }
+                100% { transform: translate(-50%, -50%); }
+              }    
+
+
+    
+    #### Virtual Devices ####
+    
+    url = CUSTOMER_API + "getsystemvirtualdevicesbysystemid/" + systemid
+    headers = {
+        "accept": "application/json, text/html",
+        "system_psk": system_pskn,
+        "eh_system_id": systemid,
+        "Content-Type": "application/json; charset=utf-8",
+    }
+
+    _LOGGER.info("Calling getsystemvirtualdevicesbysystemid API")
+
+    async with aiohttp.ClientSession() as session:  # noqa: SIM117
+        async with session.post(url, headers=headers) as response:
+            _LOGGER.debug("API response status: %s", response.status)
+            _LOGGER.debug("API response headers: %s", response.headers)
+            content = await response.text()
+            _LOGGER.debug("API response content: %s", content)
+
+            if content is not None:
+                data = json.loads(content)
+
+            if "results" in data:
+                print("set the devices here")
+            #    hass.states.async_set(  # type: ignore  # noqa: PGH003
+            #        "oasira_b2b.virtualdevices",
+            #        data["results"],
+            #    )
+
+            else:
+                _LOGGER.debug("No virtual devices Found For This System")
+
+    url = CUSTOMER_API + "getsystemvirtualpowerentitiesbysystemid/" + systemid
+    headers = {
+        "accept": "application/json, text/html",
+        "system_psk": system_psk,
+        "eh_system_id": systemid,
+        "Content-Type": "application/json; charset=utf-8",
+    }
+
+    _LOGGER.info("Calling getsystemvirtualpowerentitiesbysystemid API")
+
+    async with aiohttp.ClientSession() as session:  # noqa: SIM117
+        async with session.post(url, headers=headers) as response:
+            _LOGGER.debug("API response status: %s", response.status)
+            _LOGGER.debug("API response headers: %s", response.headers)
+            content = await response.text()
+            _LOGGER.debug("API response content: %s", content)
+
+            if content is not None:
+                data = json.loads(content)
+
+            if "results" in data:
+                print("set the devices here")
+                # hass.states.async_set(  # type: ignore  # noqa: PGH003
+                #    "oasira_b2b.virtualpowerentities",
+                #    data["results"],
+                # )
+
+            else:
+                _LOGGER.debug("No virtual power entities Found For This System")
