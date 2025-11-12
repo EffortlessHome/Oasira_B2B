@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 import aiohttp
 import asyncio
 import os
+import requests
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
 
@@ -14,24 +15,40 @@ from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, NAME
+from .const import DOMAIN, NAME, CUSTOMER_API
 from .oasiranotificationdevice import oasiranotificationdevice
 
 _LOGGER = logging.getLogger(__name__)
 
-SERVICE_ACCOUNT_FILE = "service-account.json"
 FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
 
-integration_dir = os.path.dirname(os.path.abspath(__file__))
-service_account_path = os.path.join(integration_dir, SERVICE_ACCOUNT_FILE)
+SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
 
-credentials = service_account.Credentials.from_service_account_file(
-    service_account_path,
+
+headers = {
+    "oasira_psk": "665e459692f515b1528312cf",   
+    "Content-Type": "application/json"
+}
+
+response = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
+response.raise_for_status()
+
+data = response.json()
+
+# Safely extract Google_Firebase (if it exists)
+google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
+
+if google_firebase_raw:
+    # It’s likely a JSON string, so parse it again
+    google_firebase = json.loads(google_firebase_raw)
+
+credentials = service_account.Credentials.from_service_account_info(
+    google_firebase,
     scopes=["https://www.googleapis.com/auth/firebase.messaging"]
 )
+
 credentials.refresh(Request())
 access_token = credentials.token
-
 
 class OasiraPerson(SensorEntity, RestoreEntity):
     """A persistent, sensor-like representation of an Oasira Person with tracking and notifications."""
