@@ -304,6 +304,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handle_oasira_location_update_webhook,
     )
 
+    _LOGGER.info("[Oasira] Webhook registered: %s", webhook_id)
+
+    webhook_id = "oasira_track_device_update"
+
+    webhook.async_register(
+        hass,
+        DOMAIN,
+        "Oasira Tracking Devices",
+        webhook_id,
+        handle_set_person_location_devices,
+    )
 
     _LOGGER.info("[Oasira] Webhook registered: %s", webhook_id)
 
@@ -418,6 +429,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     webhook.async_unregister(hass, "oasira_location_update")
     webhook.async_unregister(hass, "oasira_push_token")
     webhook.async_unregister(hass, "oasira_broadcast")
+    webhook.async_unregister(hass, "oasira_track_device_update")
 
     return True
 
@@ -1343,9 +1355,6 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
         _LOGGER.info("[Oasira] Invalid JSON payload: %s", e)
         return
 
-    #TODO: Jermie: Add LOGIC: since this user logged in via a device or browser, find their OasiraPerson record and add this as a notification device (if not already existing)
-    #also save to their Oasira online record for future restore
-
     email = data.get("email")
     token = data.get("token")
     device_name = data.get("device_name")
@@ -1358,7 +1367,6 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
     for person in persons:
-      #  _LOGGER.info("[Oasira] Push Notification Find Person"+ person.name)
         if person.name == email:
             targetperson = person
             break
@@ -1366,3 +1374,35 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     if targetperson is not None:
         _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
         await targetperson.async_set_notification_devices(hass, token, device_name, platform_name)
+
+@callback
+async def handle_set_person_location_devices(hass, webhook_id, request):
+    """Handle incoming webhook."""
+
+    _LOGGER.info("[Oasira] Handling set person location webhook")
+
+    try:
+        data = await request.json()
+    except Exception as e:
+        _LOGGER.info("[Oasira] Invalid JSON payload: %s", e)
+        return
+
+    email = data.get("email")
+    inhometracker = data.get("inhometracker")
+    remotetracker = data.get("remotetracker")
+
+    if not email:
+        _LOGGER.info("[Oasira] Set Person Location Devices Webhook called without 'email' field.")
+        return
+
+    targetperson = None
+    persons = hass.data.get(DOMAIN, {}).get("persons", [])
+    for person in persons:
+        if person.name == email:
+            targetperson = person
+            break
+
+    if targetperson is not None:
+        _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
+        await targetperson.async_set_local_tracker(inhometracker)
+        await targetperson.async_set_remote_tracker(remotetracker)
