@@ -1404,5 +1404,8 @@ async def handle_set_person_location_devices(hass, webhook_id, request):
 
     if targetperson is not None:
         _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
-        await targetperson.async_set_local_tracker(inhometracker)
-        await targetperson.async_set_remote_tracker(remotetracker)
+        if inhometracker is not None:
+            await targetperson.async_set_local_tracker(inhometracker)
+        
+        if remotetracker is not None:
+            await targetperson.async_set_remote_tracker(remotetracker)
