@@ -69,6 +69,8 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         self._device_registry = async_get_dev_reg(hass) if hass else None
         self._device_id = None
 
+        
+
     # ---- Standard HA Properties ----
     @property
     def unique_id(self) -> str:
@@ -80,7 +82,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
     @property
     def state(self) -> str:
-        return self._email
+        return self.remotetracker + "|"+ self.localtracker
 
     @property
     def name(self) -> str:
@@ -97,6 +99,40 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             "name": NAME,
             "manufacturer": NAME,
         }
+
+    @property
+    def localtracker(self) -> str:
+        # Local tracker
+        if self._local_tracker_entity_id:
+            return self.get_tracker_value(self._local_tracker_entity_id)
+        else:
+            return "unknown"
+
+
+    @property
+    def remotetracker(self) -> str:
+        # Remote tracker
+        if self._remote_tracker_entity_id:
+            return self.get_tracker_value(self._remote_tracker_entity_id)
+        else:
+            return "unknown"
+
+    # Helper function to extract state or area
+    def get_tracker_value(self, entity_id: str):
+        if not entity_id:
+            return "Unknown"
+
+        entity = self.hass.states.get(entity_id)
+        if entity is None:
+            return "Unlnown"
+
+        # If attribute "area" exists, return it
+        area_attr = entity.attributes.get("area")
+        if area_attr is not None:
+            return area_attr
+
+        # Else fall back to normal entity state
+        return entity.state
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

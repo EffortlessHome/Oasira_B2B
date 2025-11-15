@@ -453,22 +453,12 @@ def register_services(hass) -> None:
 
     @callback
     async def notify_person_service(call: ServiceCall) -> None:
-        await async_send_message(call)
+        await handle_notify_person_service(call)
 
     hass.services.async_register(
         DOMAIN,
         "notify_person_service",
-        async_send_message,
-    )
-
-    @callback
-    async def notify_person(call: ServiceCall) -> None:
-        await handle_notify_person(call)
-    
-    hass.services.async_register(
-        DOMAIN, 
-        "notify_person", 
-        handle_notify_person,
+        handle_notify_person_service,
     )
 
     @callback
@@ -727,38 +717,7 @@ async def cleanmotionfiles(calldata):
     else:
         _LOGGER.error(f"Error deleting snapshots: {process.stderr.decode()}")
 
-
-# Register the service to send notifications to a person
-async def handle_notify_person(call):
-    """Handle the oasira_b2b.notify_person service call."""
-    entity_id = call.data.get("entity_id")
-    message = call.data.get("message")
-    title = call.data.get("title")
-    data = call.data.get("data")
-
-    _LOGGER.info(f"In handle_notify_person with entity: {entity_id} and message: {message}")
-
-    if not entity_id or not message:
-        _LOGGER.error("`entity_id` and `message` are required for `notify_person` service.")
-        return
-
-    hass = HASSComponent.get_hass()
-
-    targetperson = None
-    persons = hass.data.get(DOMAIN, {}).get("persons", [])
-    for person in persons:
-        _LOGGER.info("[Oasira] Push Notification Find Person"+ person.entity_id)
-        if person.entity_id == entity_id:
-            targetperson = person
-            break
-
-    if targetperson is not None:
-        await targetperson.async_send_notification(message, title, data)
-
-    return True
-
-
-async def async_send_message(calldata):
+async def handle_notify_person_service(calldata):
     """Send a notification message only to a person’s Mobile App device trackers."""
     _LOGGER.info("In async_send_message")
 
@@ -1180,125 +1139,9 @@ async def handle_energy_suggestion():
     except Exception as err:
         raise HomeAssistantError(f"Error getting AI energy recommendation: {err}") from err
 
-async def setup_matter_hub():
-    """Install and start Home Assistant Matter Hub."""
 
-    # Step 1: install npm
-    _LOGGER.info("Installing npm via apk...")
-    try:
-        proc_apk = await asyncio.create_subprocess_exec(
-            "apk", "add", "npm",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc_apk.communicate()
-        if out:
-            _LOGGER.info("apk stdout: %s", out.decode())
-        if err:
-            _LOGGER.warning("apk stderr: %s", err.decode())
-        if proc_apk.returncode != 0:
-            _LOGGER.error("apk add npm failed with code %s", proc_apk.returncode)
-            return False
-    except FileNotFoundError:
-        _LOGGER.error("apk not available in this environment")
-        return False
 
-    # Step 2: install home-assistant-matter-hub
-    _LOGGER.info("Installing home-assistant-matter-hub...")
-    proc_npm = await asyncio.create_subprocess_exec(
-        "npm", "install", "-g", "home-assistant-matter-hub",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    out, err = await proc_npm.communicate()
-    if out:
-        _LOGGER.info("npm stdout: %s", out.decode())
-    if err:
-        _LOGGER.warning("npm stderr: %s", err.decode())
-    if proc_npm.returncode != 0:
-        _LOGGER.error("npm install failed with code %s", proc_npm.returncode)
-        return False
 
-    hass = HASSComponent.get_hass()
-    ha_token = hass.data[DOMAIN]["ha_token"]
-
-    # Step 3: run home-assistant-matter-hub start
-    _LOGGER.info("Starting home-assistant-matter-hub...")
-    proc_hamh = await asyncio.create_subprocess_exec(
-        "home-assistant-matter-hub", "start",
-        "--home-assistant-url="+ HA_URL,
-        "--home-assistant-access-token="+ ha_token,
-        "--log-level=debug",
-        "--http-port=8482",
-        "--storage-location='/config/matterhub'",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    # Keep it running; don’t wait/communicate unless you want blocking
-    _LOGGER.info("home-assistant-matter-hub process started with PID %s", proc_hamh.pid)
-    return True
-
-async def install_cloudflared():
-    """Download and install cloudflared binary manually."""
-    url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-    path = "/usr/local/bin/cloudflared"
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "wget", "-O", path, url,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-        if proc.returncode != 0:
-            _LOGGER.error("wget failed")
-            return False
-
-        # Make executable
-        proc_chmod = await asyncio.create_subprocess_exec(
-            "chmod", "+x", path
-        )
-        await proc_chmod.communicate()
-        _LOGGER.info("cloudflared installed at %s", path)
-    
-    except Exception as e:
-        _LOGGER.error("Error installing cloudflared: %s", e)
-        return False
-
-    hass = HASSComponent.get_hass()
-    cloudflare_token = hass.data[DOMAIN]["cloudflare_token"]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "/usr/local/bin/cloudflared",
-            "tunnel",
-            "run",
-            "--token " + cloudflare_token,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        out, err = await proc.communicate()
-
-        if out:
-            _LOGGER.info("cloudflared stdout: %s", out.decode(errors="ignore"))
-        if err:
-            _LOGGER.warning("cloudflared stderr: %s", err.decode(errors="ignore"))
-
-        if proc.returncode == 0:
-            _LOGGER.info("cloudflared service installed successfully")
-            return True
-        else:
-            _LOGGER.error("cloudflared service install failed with exit %s", proc.returncode)
-            return False
-
-    except FileNotFoundError:
-        _LOGGER.error("cloudflared binary not found")
-        return False
-    except Exception as exc:
-        _LOGGER.exception("Error running cloudflared install: %s", exc)
-        return False
-  
 @callback
 async def handle_oasira_location_update_webhook(hass, webhook_id, request):
     """Register Oasira location update service."""
@@ -1404,8 +1247,8 @@ async def handle_set_person_location_devices(hass, webhook_id, request):
 
     if targetperson is not None:
         _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
-        if inhometracker is not None:
+        if inhometracker is not None and inhometracker != "":
             await targetperson.async_set_local_tracker(inhometracker)
         
-        if remotetracker is not None:
+        if remotetracker is not None and remotetracker != "":
             await targetperson.async_set_remote_tracker(remotetracker)
