@@ -69,6 +69,8 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         self._device_registry = async_get_dev_reg(hass) if hass else None
         self._device_id = None
 
+        
+
     # ---- Standard HA Properties ----
     @property
     def unique_id(self) -> str:
@@ -80,7 +82,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
     @property
     def state(self) -> str:
-        return self._email
+        return self.remotetracker + "|"+ self.localtracker
 
     @property
     def name(self) -> str:
@@ -97,6 +99,31 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             "name": NAME,
             "manufacturer": NAME,
         }
+
+    @property
+    def localtracker(self) -> str:
+        # Local tracker
+        if self._local_tracker_entity_id:
+            entity = self.hass.states.get(self._local_tracker_entity_id)
+            if entity is not None:
+                return entity.state
+            else:
+                return "unknown"
+        else:
+            return "unknown"
+
+
+    @property
+    def remotetracker(self) -> str:
+        # Remote tracker
+        if self._remote_tracker_entity_id:
+            entity = self.hass.states.get(self._remote_tracker_entity_id)
+            if entity is not None:
+                return entity.state
+            else:
+                return "unknown"
+        else:
+            return "unknown"
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
