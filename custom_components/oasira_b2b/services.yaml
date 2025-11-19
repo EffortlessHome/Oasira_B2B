@@ -28,10 +28,10 @@ add_label_to_entity:
 notify_person_service:
   description: Notify a person
   fields:
-    target:
-      name: target
-      description: The person/people to notify
-      example: "[person.john, person.jane]"
+    email:
+      name: email
+      description: The email of the person to notify
+      example: "john@example.com"
     message:
       name: Message
       description: The message to send

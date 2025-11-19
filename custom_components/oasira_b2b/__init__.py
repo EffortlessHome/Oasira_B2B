@@ -722,9 +722,9 @@ async def handle_notify_person_service(calldata):
     _LOGGER.info("In async_send_message")
 
     hass = HASSComponent.get_hass()
-    person_name_list = calldata.data.get("target")
+    email = calldata.data.get("email")
 
-    if not person_name_list:
+    if not email:
         _LOGGER.info("No person provided")
         return
 
@@ -736,50 +736,21 @@ async def handle_notify_person_service(calldata):
     title = calldata.data.get("title")
     data = calldata.data.get("data")
 
-    ent_reg = entity_registry.async_get(hass)
+    targetperson = None
+    persons = hass.data.get(DOMAIN, {}).get("persons", [])
+    for person in persons:
+        if person.name == email:
+            targetperson = person
+            break
 
-    for person_name in person_name_list:
-        person_entity = f"{person_name.lower()}"
-        person_entry = ent_reg.async_get(person_entity)
+    if targetperson is not None:
+        _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
+        await targetperson.async_send_notification(message, title, data)     
+        
+    else:
+        _LOGGER.info("[Oasira] No matching person found for email: "+ email)
+        return
 
-        if person_entry is None:
-            _LOGGER.info(f"Person entity {person_entity} not found.")
-            continue
-
-        _LOGGER.info(f"Person entry {person_entry} found.")
-
-        # Get device trackers associated with this person
-        device_trackers = person.entities_in_person(hass, person_entity)
-
-        if not device_trackers:
-            _LOGGER.info(f"No device trackers found for person {person_name}.")
-            continue
-
-        _LOGGER.info(f"Person device trackers {device_trackers} found.")
-
-        # Filter only device_trackers from the Mobile App integration
-        mobile_app_devices = []
-        for device_tracker in device_trackers:
-            tracker_entry = ent_reg.async_get(device_tracker)
-            if tracker_entry and tracker_entry.platform == "mobile_app":
-                mobile_app_devices.append(device_tracker)
-
-        if not mobile_app_devices:
-            _LOGGER.info(f"No Mobile App device trackers found for {person_name}.")
-            continue
-
-        # Send notifications to Mobile App notify services
-        for device_tracker in mobile_app_devices:
-            notify_service = device_tracker.replace("device_tracker.", "mobile_app_")
-            _LOGGER.info(
-                f"Sending notification to {notify_service} for {person_name}"
-            )
-            await hass.services.async_call(
-                "notify",
-                notify_service,
-                {"message": message, "title": title, "data": data},
-                blocking=False,
-            )
 
 async def handle_deploy_latest_config(call: ServiceCall) -> None:
     """Handle the service call."""
