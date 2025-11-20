@@ -9,8 +9,10 @@ import os
 import requests
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
-from google.oauth2 import service_account
-from google.auth.transport.aiohttp_requests import AiohttpRequest
+
+import time
+from google.auth import jwt
+from google.auth.crypt import rsa
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
@@ -21,6 +23,10 @@ from .const import DOMAIN, NAME, CUSTOMER_API
 from .oasiranotificationdevice import oasiranotificationdevice
 
 _LOGGER = logging.getLogger(__name__)
+
+
+GOOGLE_OAUTH_URL = "https://oauth2.googleapis.com/token"
+FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
 
@@ -299,7 +305,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         )
 
     async def async_get_firebase_access_token(self) -> str:
-        """Fetch and refresh Firebase access token using fully async I/O."""
+        """Generate a Firebase access token using service account JSON (async + HA safe)."""
 
         try:
             headers = {
@@ -307,7 +313,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
                 "Content-Type": "application/json"
             }
 
-            # ---- ASYNC HTTP CALL (NO BLOCKING) ----
+            # ---- Fetch service account JSON ----
             async with aiohttp.ClientSession() as session:
                 async with session.get(SERVICE_ACCOUNT_URL, headers=headers) as resp:
                     if resp.status != 200:
@@ -318,22 +324,42 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
             google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
             if not google_firebase_raw:
-                _LOGGER.error("Missing Google_Firebase in server response")
+                _LOGGER.error("Missing Google_Firebase in response")
                 return None
 
-            google_firebase = json.loads(google_firebase_raw)
+            service_account_info = json.loads(google_firebase_raw)
 
-            credentials = service_account.Credentials.from_service_account_info(
-                google_firebase,
-                scopes=["https://www.googleapis.com/auth/firebase.messaging"]
-            )
+            private_key = service_account_info["private_key"]
+            client_email = service_account_info["client_email"]
 
-            # ---- ASYNC TOKEN REFRESH ----
+            # ---- Build JWT ----
+            now = int(time.time())
+            payload = {
+                "iss": client_email,
+                "scope": FIREBASE_SCOPE,
+                "aud": GOOGLE_OAUTH_URL,
+                "iat": now,
+                "exp": now + 3600,
+            }
+
+            signer = rsa.RSASigner.from_string(private_key)
+            assertion = jwt.encode(signer, payload)
+
+            # ---- Exchange JWT for OAuth access token ----
+            form = {
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+            }
+
             async with aiohttp.ClientSession() as session:
-                request = AiohttpRequest(session)
-                await credentials.refresh(request)
+                async with session.post(GOOGLE_OAUTH_URL, data=form) as resp:
+                    result = await resp.json()
 
-            return credentials.token
+                    if "access_token" not in result:
+                        _LOGGER.error("Firebase OAuth error: %s", result)
+                        return None
+
+                    return result["access_token"]
 
         except Exception as e:
             _LOGGER.exception("Failed to refresh Firebase access token: %s", e)
