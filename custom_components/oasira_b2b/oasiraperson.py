@@ -20,16 +20,6 @@ from .oasiranotificationdevice import oasiranotificationdevice
 
 _LOGGER = logging.getLogger(__name__)
 
-FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
-
-SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
-
-
-headers = {
-    "oasira_psk": "665e459692f515b1528312cf",   
-    "Content-Type": "application/json"
-}
-
 class OasiraPerson(SensorEntity, RestoreEntity):
     """A persistent, sensor-like representation of an Oasira Person with tracking and notifications."""
 
@@ -299,6 +289,16 @@ class OasiraPerson(SensorEntity, RestoreEntity):
     # ---- Notification ----
     async def async_send_notification(self, message: str, title: str = None, data: dict = None):
         """Send push notifications to all registered devices."""
+        FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
+
+        SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
+
+
+        headers = {
+            "oasira_psk": "665e459692f515b1528312cf",   
+            "Content-Type": "application/json"
+        }
+
         response = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
         response.raise_for_status()
 
