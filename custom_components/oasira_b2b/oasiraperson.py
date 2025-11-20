@@ -30,26 +30,6 @@ headers = {
     "Content-Type": "application/json"
 }
 
-response = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
-response.raise_for_status()
-
-data = response.json()
-
-# Safely extract Google_Firebase (if it exists)
-google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
-
-if google_firebase_raw:
-    # It’s likely a JSON string, so parse it again
-    google_firebase = json.loads(google_firebase_raw)
-
-credentials = service_account.Credentials.from_service_account_info(
-    google_firebase,
-    scopes=["https://www.googleapis.com/auth/firebase.messaging"]
-)
-
-credentials.refresh(Request())
-access_token = credentials.token
-
 class OasiraPerson(SensorEntity, RestoreEntity):
     """A persistent, sensor-like representation of an Oasira Person with tracking and notifications."""
 
@@ -319,6 +299,26 @@ class OasiraPerson(SensorEntity, RestoreEntity):
     # ---- Notification ----
     async def async_send_notification(self, message: str, title: str = None, data: dict = None):
         """Send push notifications to all registered devices."""
+        response = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Safely extract Google_Firebase (if it exists)
+        google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
+
+        if google_firebase_raw:
+            # It’s likely a JSON string, so parse it again
+            google_firebase = json.loads(google_firebase_raw)
+
+        credentials = service_account.Credentials.from_service_account_info(
+            google_firebase,
+            scopes=["https://www.googleapis.com/auth/firebase.messaging"]
+        )
+
+        credentials.refresh(Request())
+        access_token = credentials.token
+
         if not self._notification_devices:
             _LOGGER.warning("[OasiraPerson] No registered devices for %s", self._email)
             return
