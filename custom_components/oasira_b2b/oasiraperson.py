@@ -20,6 +20,16 @@ from .oasiranotificationdevice import oasiranotificationdevice
 
 _LOGGER = logging.getLogger(__name__)
 
+FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
+
+SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
+
+headers = {
+    "oasira_psk": "665e459692f515b1528312cf",   
+    "Content-Type": "application/json"
+}
+
+
 class OasiraPerson(SensorEntity, RestoreEntity):
     """A persistent, sensor-like representation of an Oasira Person with tracking and notifications."""
 
@@ -286,42 +296,52 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             self._email,
         )
 
+    async def async_get_firebase_access_token(self) -> str:
+        """Fetch and refresh Firebase access token every time a notification is sent."""
+        try:
+            # Fetch service account config fresh every time
+            headers = {
+                "oasira_psk": "665e459692f515b1528312cf",
+                "Content-Type": "application/json"
+            }
+
+            resp = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
+            if not google_firebase_raw:
+                _LOGGER.error("No Google_Firebase config returned by server")
+                return None
+
+            google_firebase = json.loads(google_firebase_raw)
+
+            credentials = service_account.Credentials.from_service_account_info(
+                google_firebase,
+                scopes=["https://www.googleapis.com/auth/firebase.messaging"]
+            )
+
+            # Refresh access token
+            credentials.refresh(Request())
+            return credentials.token
+
+        except Exception as e:
+            _LOGGER.exception("Failed to refresh Firebase access token: %s", e)
+            return None
+
+
     # ---- Notification ----
     async def async_send_notification(self, message: str, title: str = None, data: dict = None):
         """Send push notifications to all registered devices."""
-        
-        FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
-
-        SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
-
-        headers = {
-            "oasira_psk": "665e459692f515b1528312cf",   
-            "Content-Type": "application/json"
-        }
-
-        response = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
-        response.raise_for_status()
-
-        data = response.json()
-
-        # Safely extract Google_Firebase (if it exists)
-        google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
-
-        if google_firebase_raw:
-            # It’s likely a JSON string, so parse it again
-            google_firebase = json.loads(google_firebase_raw)
-
-        credentials = service_account.Credentials.from_service_account_info(
-            google_firebase,
-            scopes=["https://www.googleapis.com/auth/firebase.messaging"]
-        )
-
-        credentials.refresh(Request())
-        access_token = credentials.token
 
         if not self._notification_devices:
             _LOGGER.warning("[OasiraPerson] No registered devices for %s", self._email)
             return
+
+        access_token = await self.async_get_firebase_access_token()
+        if not access_token:
+            _LOGGER.error("Failed to obtain fresh Firebase token — notification aborted.")
+            return            
 
         for device in self._notification_devices:
             if not device.DeviceToken:
