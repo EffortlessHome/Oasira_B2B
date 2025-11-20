@@ -9,6 +9,8 @@ import os
 import requests
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
+from google.oauth2 import service_account
+from google.auth.transport.aiohttp_requests import AiohttpRequest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
@@ -297,21 +299,26 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         )
 
     async def async_get_firebase_access_token(self) -> str:
-        """Fetch and refresh Firebase access token every time a notification is sent."""
+        """Fetch and refresh Firebase access token using fully async I/O."""
+
         try:
-            # Fetch service account config fresh every time
             headers = {
                 "oasira_psk": "665e459692f515b1528312cf",
                 "Content-Type": "application/json"
             }
 
-            resp = requests.get(SERVICE_ACCOUNT_URL, headers=headers, timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
+            # ---- ASYNC HTTP CALL (NO BLOCKING) ----
+            async with aiohttp.ClientSession() as session:
+                async with session.get(SERVICE_ACCOUNT_URL, headers=headers) as resp:
+                    if resp.status != 200:
+                        _LOGGER.error("Failed to fetch service account JSON: %s", resp.status)
+                        return None
+
+                    data = await resp.json()
 
             google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
             if not google_firebase_raw:
-                _LOGGER.error("No Google_Firebase config returned by server")
+                _LOGGER.error("Missing Google_Firebase in server response")
                 return None
 
             google_firebase = json.loads(google_firebase_raw)
@@ -321,13 +328,17 @@ class OasiraPerson(SensorEntity, RestoreEntity):
                 scopes=["https://www.googleapis.com/auth/firebase.messaging"]
             )
 
-            # Refresh access token
-            credentials.refresh(Request())
+            # ---- ASYNC TOKEN REFRESH ----
+            async with aiohttp.ClientSession() as session:
+                request = AiohttpRequest(session)
+                await credentials.refresh(request)
+
             return credentials.token
 
         except Exception as e:
             _LOGGER.exception("Failed to refresh Firebase access token: %s", e)
             return None
+
 
 
     # ---- Notification ----
