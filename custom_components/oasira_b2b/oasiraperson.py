@@ -341,7 +341,6 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
 
 
-    # ---- Notification ----
     async def async_send_notification(self, message: str, title: str = None, data: dict = None):
         """Send push notifications to all registered devices."""
 
@@ -352,11 +351,10 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         access_token = await self.async_get_firebase_access_token()
         if not access_token:
             _LOGGER.error("Failed to obtain fresh Firebase token — notification aborted.")
-            return            
+            return
 
         for device in self._notification_devices:
             if not device.DeviceToken:
-                _LOGGER.warning("[OasiraPerson] Skipping device %s (missing token)", device.Name)
                 continue
 
             payload = {
@@ -375,15 +373,14 @@ class OasiraPerson(SensorEntity, RestoreEntity):
                 "Content-Type": "application/json; UTF-8",
             }
 
-            _LOGGER.debug("[OasiraPerson] Sending FCM to %s: %s", device.Name, payload)
-
             async with aiohttp.ClientSession() as session:
                 async with session.post(FCM_URL, headers=headers, json=payload) as resp:
-                    text = await resp.text()
                     if resp.status != 200:
-                        _LOGGER.error("FCM error %s: %s", resp.status, text)
+                        body = await resp.text()
+                        _LOGGER.error("FCM error %s: %s", resp.status, body)
                     else:
-                        _LOGGER.info("Notification sent successfully to %s", device.Name)
+                        _LOGGER.info("Notification sent to %s", device.Name)
+
 
     def __repr__(self):
         return f"<OasiraPerson email={self._email!r} devices={len(self._notification_devices)}>"
