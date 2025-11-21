@@ -461,15 +461,15 @@ def register_services(hass) -> None:
         handle_notify_person_service,
     )
 
-    @callback
-    async def remove_person_service(call: ServiceCall) -> None:
-        await handle_remove_person_service(call)
+    #@callback
+    #async def remove_person_service(call: ServiceCall) -> None:
+    #    await handle_remove_person_service(call)
 
-    hass.services.async_register(
-        DOMAIN,
-        "remove_person_service",
-        handle_remove_person_service,
-    )
+    #hass.services.async_register(
+    #    DOMAIN,
+    #    "remove_person_service",
+    #    handle_remove_person_service,
+    #)
 
     @callback
     async def createeventservice(call: ServiceCall) -> None:

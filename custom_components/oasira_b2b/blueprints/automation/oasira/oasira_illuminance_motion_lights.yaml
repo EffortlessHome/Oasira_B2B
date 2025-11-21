@@ -94,7 +94,7 @@ condition:
 
 action:
   - variables:
-      mylight: !input light_target #light.area_lights_bedroom
+      mylight: !input light_target 
       valuequery: '{{ "sleeparea" not in labels(mylight.entity_id)  }}'
 
       valuetemplate: "{{ valuequery }}"
