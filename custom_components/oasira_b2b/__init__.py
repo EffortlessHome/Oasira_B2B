@@ -299,7 +299,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     webhook.async_register(
         hass,
         DOMAIN,
-        "Oasira Push Token",
+        "Oasira Location Update",
         webhook_id,
         handle_oasira_location_update_webhook,
     )
@@ -459,6 +459,16 @@ def register_services(hass) -> None:
         DOMAIN,
         "notify_person_service",
         handle_notify_person_service,
+    )
+
+    @callback
+    async def remove_person_service(call: ServiceCall) -> None:
+        await handle_remove_person_service(call)
+
+    hass.services.async_register(
+        DOMAIN,
+        "remove_person_service",
+        handle_remove_person_service,
     )
 
     @callback
@@ -716,6 +726,29 @@ async def cleanmotionfiles(calldata):
         _LOGGER.info("Successfully deleted old snapshots.")
     else:
         _LOGGER.error(f"Error deleting snapshots: {process.stderr.decode()}")
+
+
+async def handle_remove_person_service(calldata):
+    """Handle remove person service."""
+
+    _LOGGER.info("In handle_remove_person_service")
+
+    hass = HASSComponent.get_hass()
+    email = calldata.data.get("email")
+
+    if not email:
+        _LOGGER.info("No person provided")
+        return
+
+    persons = hass.data.get(DOMAIN, {}).get("persons", [])
+
+    for i, person in enumerate(persons):
+        if person.name == email:
+            _LOGGER.info("Removing person: %s", email)
+            del persons[i]   # remove directly
+            return
+
+    _LOGGER.info("Person not found: %s", email)
 
 async def handle_notify_person_service(calldata):
     """Send a notification message only to a person’s Mobile App device trackers."""

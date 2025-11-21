@@ -116,12 +116,14 @@ action:
   - service: light.turn_on
     target: !input light_target
 
-  - wait_for_trigger:
-      platform: state
-      entity_id: !input motion_entity
-      from: "on"
-
-  - delay: !input no_motion_wait
+  - repeat:
+      until:
+        - platform: state
+          entity_id: !input motion_entity
+          from: "on"
+          to: "off"
+      sequence:
+        - delay: !input no_motion_wait
 
   - service: light.turn_off
     target: !input light_target
