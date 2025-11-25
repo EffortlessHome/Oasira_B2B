@@ -92,7 +92,7 @@ action:
         Very briefly describe what you see in this image from my
         camera. Your message needs to be short to fit in a phone notification.
         Don't describe stationary objects or buildings.
-      entity_id: ai_task.oasira_b2b_ai_task
+      entity_id: ai_task.oasira_business_ai_task
       attachments:
         media_content_id: "{{ snapshot_media_source }}"
         media_content_type: image/jpeg
