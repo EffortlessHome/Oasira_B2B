@@ -260,23 +260,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     hass.data[DOMAIN]["persons"].append(person)
 
-                    # Create Home Assistant person entity
+                    # Create Home Assistant person entity using person component
                     person_id = user["user_email"].lower().replace('@', '_').replace('.', '_')
                     entity_id = f"person.{person_id}"
                     
-                    # Create the person entity with attributes
-                    await hass.services.async_call(
-                        "person",
-                        "create",
-                        {
-                            "name": user["user_email"],
-                            "id": person_id,
-                            "user_id": user.get("user_id"),
-                        },
-                        blocking=True,
-                    )
-                    
-                    _LOGGER.info("[Oasira] Created HA person entity: %s for %s", entity_id, user["user_email"])
+                    # Get the person storage collection
+                    try:
+                        person_component = hass.data.get("person")
+                        if person_component is not None:
+                            storage_collection = person_component.get("storage_collection")
+                            if storage_collection is not None:
+                                # Check if person already exists
+                                existing = None
+                                try:
+                                    for item in storage_collection.async_items():
+                                        if item.get("id") == person_id:
+                                            existing = item
+                                            break
+                                except Exception:
+                                    pass
+                                
+                                if not existing:
+                                    await storage_collection.async_create_item({
+                                        "id": person_id,
+                                        "name": user["user_email"],
+                                        "device_trackers": [],
+                                        "user_id": None,
+                                    })
+                                    _LOGGER.info("[Oasira] Created HA person entity: %s for %s", entity_id, user["user_email"])
+                                else:
+                                    _LOGGER.info("[Oasira] Person entity already exists: %s", entity_id)
+                    except Exception as e:
+                        _LOGGER.warning("[Oasira] Could not create person entity for %s: %s", user["user_email"], e)
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
