@@ -273,12 +273,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 # Check if person already exists
                                 existing = None
                                 try:
-                                    for item_id, item_data in storage_collection.async_items():
-                                        if item_id == person_id or item_data.get("id") == person_id:
-                                            existing = item_data
-                                            break
-                                except Exception:
-                                    pass
+                                    items = storage_collection.async_items()
+                                    # async_items() returns list of tuples or dict items
+                                    for item in items:
+                                        # Handle both tuple (id, data) and dict formats
+                                        if isinstance(item, tuple):
+                                            item_id, item_data = item
+                                            if item_id == person_id or (isinstance(item_data, dict) and item_data.get("id") == person_id):
+                                                existing = item_data
+                                                break
+                                        elif isinstance(item, dict):
+                                            if item.get("id") == person_id:
+                                                existing = item
+                                                break
+                                except Exception as ex:
+                                    _LOGGER.debug("[Oasira] Error checking existing persons: %s", ex)
                                 
                                 if not existing:
                                     await storage_collection.async_create_item({
@@ -292,6 +301,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                     _LOGGER.info("[Oasira] Person entity already exists: %s", entity_id)
                     except Exception as e:
                         _LOGGER.warning("[Oasira] Could not create person entity for %s: %s", user["user_email"], e)
+                        import traceback
+                        _LOGGER.debug("[Oasira] Full traceback: %s", traceback.format_exc())
 
     await hass.config_entries.async_forward_entry_setups(
         entry,

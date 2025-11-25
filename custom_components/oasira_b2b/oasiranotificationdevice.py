@@ -33,6 +33,11 @@ class oasiranotificationdevice(RestoreEntity):
         """Return the token."""
         return self._token
 
+    @DeviceToken.setter
+    def DeviceToken(self, value: str) -> None:
+        """Set the token."""
+        self._token = value
+
     @property
     def Name(self) -> str:
         """Return the name."""
@@ -42,6 +47,11 @@ class oasiranotificationdevice(RestoreEntity):
     def Platform(self) -> str:
         """Return the platform."""
         return self._platform
+
+    @Platform.setter
+    def Platform(self, value: str) -> None:
+        """Set the platform."""
+        self._platform = value
 
     @property
     def unique_id(self) -> str:
