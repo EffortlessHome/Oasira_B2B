@@ -734,21 +734,21 @@ async def handle_remove_person_devices_service(calldata):
     _LOGGER.info("In handle_remove_person_devices_service")
 
     hass = HASSComponent.get_hass()
-    email = calldata.data.get("email")
+    entity_id = calldata.data.get("entity_id")
 
-    if not email:
+    if not entity_id:
         _LOGGER.info("No person provided")
         return
 
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
 
     for i, person in enumerate(persons):
-        if person.name == email:
-            _LOGGER.info("Removing person devices: %s", email)
+        if person.entity_id == entity_id:
+            _LOGGER.info("Removing person devices: %s", entity_id)
             person.remove_all_devices()
             return
 
-    _LOGGER.info("Person not found: %s", email)
+    _LOGGER.info("Person not found: %s", entity_id)
 
 async def handle_notify_person_service(calldata):
     """Send a notification message only to a person’s Mobile App device trackers."""
@@ -781,7 +781,7 @@ async def handle_notify_person_service(calldata):
         await targetperson.async_send_notification(message, title, data)     
         
     else:
-        _LOGGER.info("[Oasira] No matching person found for email: "+ email)
+        _LOGGER.info("[Oasira] No matching person found for entity_id: "+ entity_id)
         return
 
 
