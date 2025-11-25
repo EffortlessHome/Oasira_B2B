@@ -462,13 +462,13 @@ def register_services(hass) -> None:
     )
 
     @callback
-    async def remove_person_service(call: ServiceCall) -> None:
-        await handle_remove_person_service(call)
+    async def remove_person_devices_service(call: ServiceCall) -> None:
+        await handle_remove_person_devices_service(call)
 
     hass.services.async_register(
         DOMAIN,
-        "remove_person_service",
-        handle_remove_person_service,
+        "remove_person_devices_service",
+        handle_remove_person_devices_service,
     )
 
     @callback
@@ -728,10 +728,10 @@ async def cleanmotionfiles(calldata):
         _LOGGER.error(f"Error deleting snapshots: {process.stderr.decode()}")
 
 
-async def handle_remove_person_service(calldata):
-    """Handle remove person service."""
+async def handle_remove_person_devices_service(calldata):
+    """Handle remove person devices service."""
 
-    _LOGGER.info("In handle_remove_person_service")
+    _LOGGER.info("In handle_remove_person_devices_service")
 
     hass = HASSComponent.get_hass()
     email = calldata.data.get("email")
@@ -744,8 +744,8 @@ async def handle_remove_person_service(calldata):
 
     for i, person in enumerate(persons):
         if person.name == email:
-            _LOGGER.info("Removing person: %s", email)
-            del persons[i]   # remove directly
+            _LOGGER.info("Removing person devices: %s", email)
+            person.remove_all_devices()
             return
 
     _LOGGER.info("Person not found: %s", email)
@@ -755,9 +755,9 @@ async def handle_notify_person_service(calldata):
     _LOGGER.info("In async_send_message")
 
     hass = HASSComponent.get_hass()
-    email = calldata.data.get("email")
+    entity_id = calldata.data.get("target")
 
-    if not email:
+    if not entity_id:
         _LOGGER.info("No person provided")
         return
 
@@ -772,7 +772,7 @@ async def handle_notify_person_service(calldata):
     targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
     for person in persons:
-        if person.name == email:
+        if person.entity_id == entity_id:
             targetperson = person
             break
 
@@ -1142,8 +1142,6 @@ async def handle_energy_suggestion():
 
     except Exception as err:
         raise HomeAssistantError(f"Error getting AI energy recommendation: {err}") from err
-
-
 
 
 @callback

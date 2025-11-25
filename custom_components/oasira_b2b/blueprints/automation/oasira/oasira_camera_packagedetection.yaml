@@ -24,12 +24,13 @@ blueprint:
           multiple: false
     person_input:
       name: Person
-      description: The person (or people) to notify
+      description: The person to notify
       selector:
         entity:
-          multiple: true
+          domain: sensor
           filter:
-            domain: person
+            - attribute: oasira_type
+              value: OasiraPerson
 
     notification_title:
       name: Notification title

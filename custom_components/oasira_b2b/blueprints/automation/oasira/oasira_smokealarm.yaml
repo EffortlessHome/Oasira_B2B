@@ -16,12 +16,13 @@ blueprint:
           multiple: true
     person_input:
       name: Person
-      description: The person (or people) to notify
+      description: The person to notify
       selector:
         entity:
-          multiple: true
+          domain: sensor
           filter:
-            domain: person
+            - attribute: oasira_type
+              value: OasiraPerson
     notification_message:
       name: Notification message
       description: Smoke Detector Activated Message

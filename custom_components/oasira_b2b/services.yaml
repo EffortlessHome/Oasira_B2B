@@ -28,10 +28,10 @@ add_label_to_entity:
 notify_person_service:
   description: Notify a person
   fields:
-    email:
-      name: email
-      description: The email of the person to notify
-      example: "john@example.com"
+    target:
+      name: target
+      description: The entity_id of the Oasira person entity to notify
+      example: "sensor.jermie_oasira_ai"
     message:
       name: Message
       description: The message to send
@@ -44,6 +44,14 @@ notify_person_service:
       name: data
       description: attached data to the message
       example: 'image: "test.jpg"'
+
+remove_person_devices_service:
+  description: Remove a person's devices
+  fields:
+    entity_id:
+      name: entity_id
+      description: The entity_id of the Oasira person entity to remove devices from
+      example: "sensor.jermie_oasira_ai"
 
 create_alert_service:
   description: Create an alert record

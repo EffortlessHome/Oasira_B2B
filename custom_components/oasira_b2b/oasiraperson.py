@@ -116,7 +116,9 @@ class OasiraPerson(SensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return attributes for Home Assistant."""
+
         return {
+            "oasira_type": "OasiraPerson",
             "email": self._email,
             "local_tracker": self._local_tracker_entity_id,
             "remote_tracker": self._remote_tracker_entity_id,
@@ -175,11 +177,31 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         existing = next((d for d in self._notification_devices if d.Name == device_name), None)
         if existing:
             _LOGGER.info("[OasiraPerson] Device %s already registered for %s", device_name, self._email)
+
+            #update mode
+            existing.DeviceToken = token
+            existing.Platform = platform_name
+            self.async_write_ha_state()
+            _LOGGER.info("[OasiraPerson] Updated notification device %s for %s", device_name, self._email)
+
         else:
             device = oasiranotificationdevice(hass, token, device_name, platform_name)
             self._notification_devices.append(device)
             self.async_write_ha_state()
             _LOGGER.info("[OasiraPerson] Added notification device %s for %s", device_name, self._email)
+
+    async def async_remove_notification_devices(
+        self, hass: HomeAssistant
+    ):
+        """Remove all notification devices."""
+        if not self._notification_devices:
+            _LOGGER.info("[OasiraPerson] No notification devices to remove for %s", self._email)
+            return      
+        else:
+            self._notification_devices.clear()
+            self.async_write_ha_state()
+            _LOGGER.info("[OasiraPerson] Removed all notification devices for %s", self._email)
+
 
     async def async_added_to_hass(self):
         """Handle entity addition and restore previous state."""

@@ -19,12 +19,13 @@ blueprint:
       default: "Water Sensor Activated. Check for water immediately."
     person_input:
       name: Person
-      description: The person (or people) to notify
+      description: The person to notify
       selector:
         entity:
-          multiple: true
+          domain: sensor
           filter:
-            domain: person
+            - attribute: oasira_type
+              value: OasiraPerson
     data_clickaction_url:
       name: URL to Navigate (Optional)
       description:

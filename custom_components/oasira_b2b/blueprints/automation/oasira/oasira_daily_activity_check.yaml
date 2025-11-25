@@ -66,12 +66,13 @@ blueprint:
           mode: slider
     person_input:
       name: Person
-      description: The person (or people) to notify
+      description: The person to notify
       selector:
         entity:
-          multiple: true
+          domain: sensor
           filter:
-            domain: person
+            - attribute: oasira_type
+              value: OasiraPerson
     execution_time:
       name: What time of the day will the activity check run
       description: The time of day when this check and notification will run each day.
