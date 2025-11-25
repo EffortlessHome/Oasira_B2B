@@ -260,6 +260,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     hass.data[DOMAIN]["persons"].append(person)
 
+                    # Create Home Assistant person entity
+                    person_id = user["user_email"].lower().replace('@', '_').replace('.', '_')
+                    entity_id = f"person.{person_id}"
+                    
+                    # Create the person entity with attributes
+                    await hass.services.async_call(
+                        "person",
+                        "create",
+                        {
+                            "name": user["user_email"],
+                            "id": person_id,
+                            "user_id": user.get("user_id"),
+                        },
+                        blocking=True,
+                    )
+                    
+                    _LOGGER.info("[Oasira] Created HA person entity: %s for %s", entity_id, user["user_email"])
+
     await hass.config_entries.async_forward_entry_setups(
         entry,
         [
