@@ -405,6 +405,18 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             if not device.DeviceToken:
                 continue
 
+            #TODO: re-enable data payload
+            #payload = {
+            #    "message": {
+            #        "token": device.DeviceToken,
+            #        "notification": {
+            #            "title": title or "Notification",
+            #            "body": message,
+            #        },
+            #        "data": data or {},
+            #    }
+            #}
+
             payload = {
                 "message": {
                     "token": device.DeviceToken,
@@ -412,7 +424,6 @@ class OasiraPerson(SensorEntity, RestoreEntity):
                         "title": title or "Notification",
                         "body": message,
                     },
-                    "data": data or {},
                 }
             }
 
