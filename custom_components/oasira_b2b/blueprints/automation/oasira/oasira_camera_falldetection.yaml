@@ -25,9 +25,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     notification_title:
       name: Notification title
       description: 'Default: "Fall detected!"'

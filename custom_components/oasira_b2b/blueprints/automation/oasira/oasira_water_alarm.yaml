@@ -23,9 +23,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     data_clickaction_url:
       name: URL to Navigate (Optional)
       description:

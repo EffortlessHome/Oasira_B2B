@@ -70,9 +70,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     execution_time:
       name: What time of the day will the activity check run
       description: The time of day when this check and notification will run each day.

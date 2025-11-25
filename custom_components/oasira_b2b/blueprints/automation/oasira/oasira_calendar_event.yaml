@@ -16,9 +16,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
 
     offset_time:
       name: Offset Before Event

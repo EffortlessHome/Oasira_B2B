@@ -28,9 +28,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     ai_prompt:
       name: Prompt to use with AI
       description: Enter the prompt to use to detect something in the image captured by motion

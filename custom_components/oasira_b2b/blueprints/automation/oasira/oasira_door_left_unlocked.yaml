@@ -28,9 +28,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     additional_actions:
       name: Additional Actions
       description: Add additional actions to execute (Optional)

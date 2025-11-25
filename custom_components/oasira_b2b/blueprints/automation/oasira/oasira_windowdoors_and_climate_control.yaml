@@ -35,9 +35,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     window_open_delay:
       name: Delay After Window Opens
       description:

@@ -745,7 +745,7 @@ async def handle_remove_person_devices_service(calldata):
     for i, person in enumerate(persons):
         if person.entity_id == entity_id:
             _LOGGER.info("Removing person devices: %s", entity_id)
-            person.remove_all_devices()
+            await person.async_remove_notification_devices(hass)
             return
 
     _LOGGER.info("Person not found: %s", entity_id)

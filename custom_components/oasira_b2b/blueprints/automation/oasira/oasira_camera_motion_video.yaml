@@ -29,9 +29,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     video_length:
       name: Video Length
       description: The length of the video to capture on motion (in seconds).

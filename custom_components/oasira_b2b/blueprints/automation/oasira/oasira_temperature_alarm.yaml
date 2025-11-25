@@ -33,9 +33,6 @@ blueprint:
       selector:
         entity:
           domain: sensor
-          filter:
-            - attribute: oasira_type
-              value: OasiraPerson
     notification_message:
       name: Notification message
       description: "Temperature Sensor Activated Message"
