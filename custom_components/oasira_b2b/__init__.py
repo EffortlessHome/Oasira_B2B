@@ -264,7 +264,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     person_id = user["user_email"].lower().replace('@', '_').replace('.', '_')
                     entity_id = f"person.{person_id}"
                     
-                    # Get the person storage collection
+                    # Create Home Assistant person entity using person component
                     try:
                         person_component = hass.data.get("person")
                         if person_component is not None:
@@ -273,9 +273,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 # Check if person already exists
                                 existing = None
                                 try:
-                                    for item in storage_collection.async_items():
-                                        if item.get("id") == person_id:
-                                            existing = item
+                                    for item_id, item_data in storage_collection.async_items():
+                                        if item_id == person_id or item_data.get("id") == person_id:
+                                            existing = item_data
                                             break
                                 except Exception:
                                     pass
