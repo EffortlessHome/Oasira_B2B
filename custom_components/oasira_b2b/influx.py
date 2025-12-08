@@ -5,10 +5,12 @@ import yaml
 import requests
 import aiohttp
 import asyncio
-from .const import DOMAIN, HA_URL, DOMAIN
+from .const import DOMAIN, DOMAIN
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall)
+
+HA_URL = "http://homeassistant.local:8123"
 
 async def process_trend_data(call: ServiceCall):
     """Handle the service call."""

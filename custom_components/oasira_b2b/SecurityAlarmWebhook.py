@@ -3,6 +3,7 @@ import logging
 from .const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.components import webhook
+from aiohttp import web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,12 +30,13 @@ class SecurityAlarmWebhook:
 
         return True
 
-    async def handle_webhook(self, hass: HomeAssistant, webhook_id, request) -> None:
+    async def handle_webhook(self, hass: HomeAssistant, webhook_id, request):
         """Handle incoming webhook requests."""
         _LOGGER.info("In security alarm handle webhook")
 
         if request.method not in ["POST", "PUT"]:
-            return  # Ignore methods other than POST or PUT
+            _LOGGER.warning("Invalid method: %s", request.method)
+            return web.Response(status=405, text="Method not allowed")
 
         # Extract the JSON payload from the request
         try:
@@ -68,9 +70,17 @@ class SecurityAlarmWebhook:
                                     DOMAIN +".alarmstatus", "Canceled"
                                 )
 
-        except ValueError:
-            _LOGGER.info("webhookjson error:" + str(ValueError))
-            return  # Handle invalid JSON
+            return web.Response(status=200, text="OK")
+
+        except ValueError as e:
+            _LOGGER.error("webhookjson error: %s", e)
+            return web.Response(status=400, text="Invalid JSON")
+        except KeyError as e:
+            _LOGGER.error("Missing expected field in webhook data: %s", e)
+            return web.Response(status=400, text="Missing required field")
+        except Exception as e:
+            _LOGGER.error("Error processing security alarm webhook: %s", e)
+            return web.Response(status=500, text="Internal server error")
 
 
 async def async_remove(self) -> None:

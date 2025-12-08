@@ -70,13 +70,11 @@ from .area_manager import AreaManager
 from .auto_area import AutoArea
 
 from .oasiraperson import OasiraPerson
+from oasira import OasiraAPIClient, OasiraAPIError
 
 from .const import (
     DOMAIN,
-    CUSTOMER_API,
-    SECURITY_API,
     LABELS,
-    HA_URL,
     WEBHOOK_UPDATE_PUSH_TOKEN,
     CONF_EMAIL, 
     ATTR_LATITUDE,
@@ -147,6 +145,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     system_id = entry.data["system_id"]
     customer_id = entry.data["customer_id"]
+    id_token = entry.data.get("id_token")
 
     if not system_id:
         raise HomeAssistantError("System ID is missing in configuration.")
@@ -156,59 +155,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     HASSComponent.set_hass(hass)
 
-    url = CUSTOMER_API + "getcustomerandsystem/0"
+    # Initialize API client and fetch customer/system data
+    async with OasiraAPIClient(
+        system_id=system_id,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            parsed_data = await api_client.get_customer_and_system()
 
-    headers = {
-        "accept": "application/json, text/html",
-        "eh_customer_id": customer_id,
-        "eh_system_id": system_id,
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept-Encoding": "gzip, deflate, br",  # Avoid zstd
-        "User-Agent": "Oasira-HA/1.0",
-    }
-
-    async with aiohttp.ClientSession() as session:  
-        async with session.post(url, headers=headers, json={}) as response:
-            _LOGGER.info("API response status: %s", response.status)
-            _LOGGER.info("API response headers: %s", response.headers)
-            content = await response.text()
-            _LOGGER.info("API response content: %s", content)
-
-            if response.status == 200 and content is not None:
-                parsed_data_all = json.loads(content)
-                parsed_data = parsed_data_all["results"][0]
-
-                hass.data[DOMAIN] = {
-                    "customer_psk": parsed_data["psk"],
-                    "fullname": parsed_data["fullname"],
-                    "phonenumber": parsed_data["phonenumber"],
-                    "emailaddress": parsed_data["emailaddress"],
-                    "system_psk": parsed_data["ha_security_token"],
-                    "ha_token": parsed_data["ha_token"],
-                    "ha_url": parsed_data["ha_url"],
-                    "ai_key": parsed_data["ai_key"],
-                    "ai_model": parsed_data["ai_model"],
-                    "email": parsed_data["emailaddress"],
-                    "username": parsed_data["emailaddress"],
-                    "systemid": system_id,
-                    "influx_url": parsed_data["influx_url"],
-                    "influx_token": parsed_data["influx_token"],
-                    "influx_bucket": parsed_data["influx_bucket"],
-                    "influx_org": parsed_data["influx_org"],
-                    "DaysHistoryToKeep": parsed_data["DaysHistoryToKeep"],
-                    "LowTemperatureWarning": parsed_data["LowTemperatureWarning"],
-                    "HighTemperatureWarning": parsed_data["HighTemperatureWarning"],
-                    "LowHumidityWarning": parsed_data["LowHumidityWarning"],
-                    "HighHumidityWarning": parsed_data["HighHumidityWarning"],
-                    "cloudflare_token": parsed_data["cloudflare_token"],
-                    "address_json": parsed_data["address_json"],
-                    "systemphotolurl": parsed_data["systemphotolurl"],
-                    "testmode": parsed_data["testmode"],
-                    "additional_contacts_json": parsed_data["additional_contacts_json"],
-                    "instructions_json": parsed_data["instructions_json"],
-                    "plan": parsed_data["name"],
-                    "trial_expiration": parsed_data["trial_expiration"],
-                }
+            hass.data[DOMAIN] = {
+                "customer_psk": parsed_data["psk"],
+                "fullname": parsed_data["fullname"],
+                "phonenumber": parsed_data["phonenumber"],
+                "emailaddress": parsed_data["emailaddress"],
+                "system_psk": parsed_data["ha_security_token"],
+                "ha_token": parsed_data["ha_token"],
+                "ha_url": parsed_data["ha_url"],
+                "ai_key": parsed_data["ai_key"],
+                "ai_model": parsed_data["ai_model"],
+                "email": parsed_data["emailaddress"],
+                "username": parsed_data["emailaddress"],
+                "systemid": system_id,
+                "customerid": customer_id,
+                "id_token": id_token,
+                "influx_url": parsed_data["influx_url"],
+                "influx_token": parsed_data["influx_token"],
+                "influx_bucket": parsed_data["influx_bucket"],
+                "influx_org": parsed_data["influx_org"],
+                "DaysHistoryToKeep": parsed_data["DaysHistoryToKeep"],
+                "LowTemperatureWarning": parsed_data["LowTemperatureWarning"],
+                "HighTemperatureWarning": parsed_data["HighTemperatureWarning"],
+                "LowHumidityWarning": parsed_data["LowHumidityWarning"],
+                "HighHumidityWarning": parsed_data["HighHumidityWarning"],
+                "cloudflare_token": parsed_data["cloudflare_token"],
+                "address_json": parsed_data["address_json"],
+                "systemphotolurl": parsed_data["systemphotolurl"],
+                "testmode": parsed_data["testmode"],
+                "additional_contacts_json": parsed_data["additional_contacts_json"],
+                "instructions_json": parsed_data["instructions_json"],
+                "plan": parsed_data["name"],
+                "trial_expiration": parsed_data["trial_expiration"],
+            }
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to fetch customer/system data: %s", e)
+            raise HomeAssistantError(f"Failed to fetch customer/system data: {e}") from e
 
     #system_psk = hass.data[DOMAIN]["system_psk"]
     #customer_psk = hass.data[DOMAIN]["customer_psk"]
@@ -231,28 +221,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     ##### Get all the system's users and their roles and create entities for each ######
-    url = CUSTOMER_API + "getsystemusersbysystemid/0"
-
-    headers = {
-        "accept": "application/json, text/html",
-        "eh_system_id": system_id,
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept-Encoding": "gzip, deflate, br",  # Avoid zstd
-        "User-Agent": "Oasira-HA/1.0",
-    }
-
     hass.data[DOMAIN]["persons"]: List[OasiraPerson] = []
 
-    async with aiohttp.ClientSession() as session:  
-        async with session.post(url, headers=headers, json={}) as response:
-            _LOGGER.info("API response status: %s", response.status)
-            _LOGGER.info("API response headers: %s", response.headers)
-            content = await response.text()
-            _LOGGER.info("API response content: %s", content)
-
-            if response.status == 200 and content is not None:
-                data = json.loads(content)
-                for user in data["results"]:
+    # Fetch system users using API client
+    async with OasiraAPIClient(
+        system_id=system_id,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            users = await api_client.get_system_users()
+            
+            if users:
+                for user in users:
                     person = OasiraPerson(
                         hass,
                         email=user["user_email"]
@@ -303,6 +283,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _LOGGER.warning("[Oasira] Could not create person entity for %s: %s", user["user_email"], e)
                         import traceback
                         _LOGGER.debug("[Oasira] Full traceback: %s", traceback.format_exc())
+                        
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to fetch system users: %s", e)
+            # Continue even if we can't fetch users
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
@@ -393,6 +377,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await handle_safety_suggestion()
         await handle_energy_suggestion()
 
+        #TODO: Jermie: Update the link below with the actual add-on slug
         notify_create(
             hass,
             title="Oasira Add-on Required",
@@ -637,47 +622,37 @@ async def createevent(calldata) -> None:
     if sensor_device_class is not None and sensor_device_name is not None:
         alarmstate = hass.data[DOMAIN]["alarm_id"]
 
-        jsonpayload = (
-            '{ "sensor_device_class":"'
-            + sensor_device_class
-            + '", "sensor_device_name":"'
-            + sensor_device_name
-            + '" }'
-        )
-
         if alarmstate is not None and alarmstate != "":
             alarmstatus = hass.data[DOMAIN]["alarmstatus"]
 
             if alarmstatus == "ACTIVE":
-                alarmid = hass.data[DOMAIN]["alarm_id"]  # type: ignore  # noqa: PGH003
-                _LOGGER.info("alarm id =" + alarmid)  # noqa: G003
+                alarmid = hass.data[DOMAIN]["alarm_id"]
+                _LOGGER.info("alarm id =" + alarmid)
 
-                """Call the API to create event."""
-                systemid = hass.data[DOMAIN]["systemid"]  # type: ignore  # noqa: PGH003
-                system_psk = hass.data[DOMAIN]["system_psk"]  # type: ignore  # noqa: PGH003
+                # Call the API to create event
+                systemid = hass.data[DOMAIN]["systemid"]
+                system_psk = hass.data[DOMAIN]["system_psk"]
+                id_token = hass.data[DOMAIN].get("id_token")
 
-                url = SECURITY_API + "createevent/" + alarmid
-                headers = {
-                    "accept": "application/json, text/html",
-                    "system_psk": system_psk,
-                    "eh_system_id": systemid,
-                    "Content-Type": "application/json; charset=utf-8",
+                event_data = {
+                    "sensor_device_class": sensor_device_class,
+                    "sensor_device_name": sensor_device_name,
                 }
 
-                _LOGGER.info("Calling create event API with payload: %s", jsonpayload)
+                _LOGGER.info("Calling create event API with payload: %s", event_data)
 
-                async with (
-                    aiohttp.ClientSession() as session,
-                    session.post(
-                        url, headers=headers, json=json.loads(jsonpayload)
-                    ) as response,
-                ):
-                    _LOGGER.info("API response status: %s", response.status)
-                    _LOGGER.info("API response headers: %s", response.headers)
-                    content = await response.text()
-                    _LOGGER.info("API response content: %s", content)
-
-                    return content
+                async with OasiraAPIClient(
+                    system_id=systemid,
+                    system_psk=system_psk,
+                    id_token=id_token,
+                ) as api_client:
+                    try:
+                        result = await api_client.create_event(alarmid, event_data)
+                        _LOGGER.info("API response content: %s", result)
+                        return result
+                    except OasiraAPIError as e:
+                        _LOGGER.error("Failed to create event: %s", e)
+                        return None
             return None
         return None
     return None
@@ -691,42 +666,31 @@ async def createalert(calldata) -> None:
     alert_description = calldata.data["alert_description"]
     status = calldata.data["status"]
 
-    jsonpayload = (
-        '{ "alert_type":"'
-        + alert_type
-        + '", "alert_description":"'
-        + alert_description
-        + '", "status":"'
-        + status
-        + '" }'
-    )
-
-    """Call the API to create event."""
-    systemid = hass.data[DOMAIN]["systemid"]  
-    system_psk = hass.data[DOMAIN]["system_psk"] 
-
-    url = SECURITY_API + "createalert/0"
-    headers = {
-        "accept": "application/json, text/html",
-        "system_psk": system_psk,
-        "eh_system_id": systemid,
-        "Content-Type": "application/json; charset=utf-8",
+    alert_data = {
+        "alert_type": alert_type,
+        "alert_description": alert_description,
+        "status": status,
     }
 
-    _LOGGER.info("Calling alert API with payload: %s", jsonpayload)
+    # Call the API to create alert
+    systemid = hass.data[DOMAIN]["systemid"]  
+    system_psk = hass.data[DOMAIN]["system_psk"]
+    id_token = hass.data[DOMAIN].get("id_token")
 
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(
-            url, headers=headers, json=json.loads(jsonpayload)
-        ) as response,
-    ):
-        _LOGGER.info("API response status: %s", response.status)
-        _LOGGER.info("API response headers: %s", response.headers)
-        content = await response.text()
-        _LOGGER.info("API response content: %s", content)
+    _LOGGER.info("Calling alert API with payload: %s", alert_data)
 
-        return content
+    async with OasiraAPIClient(
+        system_id=systemid,
+        system_psk=system_psk,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            result = await api_client.create_alert(alert_data)
+            _LOGGER.info("API response content: %s", result)
+            return result
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to create alert: %s", e)
+            return None
 
 async def cancelalarm(calldata):
     """Cancel alarm."""
@@ -1188,7 +1152,6 @@ async def handle_energy_suggestion():
         raise HomeAssistantError(f"Error getting AI energy recommendation: {err}") from err
 
 
-@callback
 async def handle_oasira_location_update_webhook(hass, webhook_id, request):
     """Register Oasira location update service."""
 
@@ -1198,7 +1161,7 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
         data = await request.json()
     except Exception as e:
         _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
-        return
+        return web.Response(status=400, text="Invalid JSON")
 
     ####TODO: Jermie: get user's email here and link this device tracker to them (local and online) #####
 
@@ -1206,6 +1169,10 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
     lat = data.get("latitude")
     lon = data.get("longitude")
     accuracy = data.get("accuracy", 30.0)
+
+    if not device_id or lat is None or lon is None:
+        _LOGGER.error("[Oasira] Missing required fields")
+        return web.Response(status=400, text="Missing required fields")
 
     device_id_new = device_id.lower().replace('@', '_').replace('.', '_')
 
@@ -1224,15 +1191,16 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
         },
     )
 
+    return web.Response(status=200, text="OK")
+
 #sampledata
 #{
 #    email: jermie@effortlesshome.co
-#    token: dQRbs1AlRkiSG0mlZUi886:APA91bGW21-E3C4hyX0gRTaMb4QuGHWYWk4Qjj0sldhyMwPkTTmgZis1SzwsGdgEBg1brh8KcXIJt6MecJroxIBFm0JuGctm0Ebr1_Qv8k3999999999
+#    token: dQjkhhjkljkhhkjkklhhl8k3999999999
 #    device_name: master_bedroom_tv
 #    platform: android
 #}
 
-@callback
 async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     """Handle incoming Oasira Push Token webhook (device token)."""
 
@@ -1241,8 +1209,8 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     try:
         data = await request.json()
     except Exception as e:
-        _LOGGER.info("[Oasira] Invalid JSON payload: %s", e)
-        return
+        _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
+        return web.Response(status=400, text="Invalid JSON")
 
     email = data.get("email")
     token = data.get("token")
@@ -1250,8 +1218,8 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     platform_name = data.get("platform")
 
     if not email:
-        _LOGGER.info("[Oasira] Webhook called without 'email' field.")
-        return
+        _LOGGER.error("[Oasira] Webhook called without 'email' field.")
+        return web.Response(status=400, text="Missing email field")
 
     targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
@@ -1263,8 +1231,11 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     if targetperson is not None:
         _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
         await targetperson.async_set_notification_devices(hass, token, device_name, platform_name)
+        return web.Response(status=200, text="OK")
+    else:
+        _LOGGER.warning("[Oasira] Person not found for email: %s", email)
+        return web.Response(status=404, text="Person not found")
 
-@callback
 async def handle_set_person_location_devices(hass, webhook_id, request):
     """Handle incoming webhook."""
 
@@ -1273,16 +1244,16 @@ async def handle_set_person_location_devices(hass, webhook_id, request):
     try:
         data = await request.json()
     except Exception as e:
-        _LOGGER.info("[Oasira] Invalid JSON payload: %s", e)
-        return
+        _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
+        return web.Response(status=400, text="Invalid JSON")
 
     email = data.get("email")
     inhometracker = data.get("inhometracker")
     remotetracker = data.get("remotetracker")
 
     if not email:
-        _LOGGER.info("[Oasira] Set Person Location Devices Webhook called without 'email' field.")
-        return
+        _LOGGER.error("[Oasira] Set Person Location Devices Webhook called without 'email' field.")
+        return web.Response(status=400, text="Missing email field")
 
     targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
@@ -1298,3 +1269,8 @@ async def handle_set_person_location_devices(hass, webhook_id, request):
         
         if remotetracker is not None and remotetracker != "":
             await targetperson.async_set_remote_tracker(remotetracker)
+        
+        return web.Response(status=200, text="OK")
+    else:
+        _LOGGER.warning("[Oasira] Person not found for email: %s", email)
+        return web.Response(status=404, text="Person not found")

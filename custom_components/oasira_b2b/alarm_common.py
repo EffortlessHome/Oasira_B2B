@@ -3,13 +3,11 @@
 import json
 import logging
 
-import aiohttp
-
 from homeassistant.core import HomeAssistant
 
 from . import const
+from oasira import OasiraAPIClient, OasiraAPIError
 from .const import (
-    SECURITY_API,
     ALARM_TYPE_MED_ALERT,
     ALARM_TYPE_MONITORING,
     ALARM_TYPE_SECURITY,
@@ -133,38 +131,34 @@ async def async_createsecurityalarm(pendingAlarm):
     _LOGGER.info("Email Address: %s", hass.data[DOMAIN].get("username"))  
     _LOGGER.info("Token: %s", system_psk)
 
-    url = SECURITY_API + "createsecurityalarm/0"
-    headers = {
-        "accept": "application/json, text/html",
-        "system_psk": system_psk,
-        "eh_system_id": systemid,
-        "Content-Type": "application/json; charset=utf-8",
+    #TODO: Jermie replace hardcoded sensor
+    alarm_data = {
+        "sensor_device_class": "door",
+        "sensor_device_name": "frontdoor"
     }
 
-    #TODO: Jermie replace hardcoded sensor
-    payload = '{"sensor_device_class":"door", "sensor_device_name":"frontdoor"}'
+    _LOGGER.info("Calling create monitoring alarm API with payload: %s", alarm_data)
 
-    _LOGGER.info("Calling create alarm API with payload: %s", payload)
+    id_token = hass.data[DOMAIN].get("id_token")
 
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(url, headers=headers, json=json.loads(payload)) as response,
-    ):
-        _LOGGER.info("API response status: %s", response.status)
-        _LOGGER.info("API response headers: %s", response.headers)
-        content = await response.text()
-        _LOGGER.info("API response content: %s", content)
+    async with OasiraAPIClient(
+        system_id=systemid,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            result = await api_client.create_security_alarm(system_psk, alarm_data)
+            _LOGGER.info("API response content: %s", result)
 
-        if response is not None and response.status==200:
-            json_dict = json.loads(content)
-            hass.data[DOMAIN]["alarm_id"] = json_dict.get("AlarmID")
-            hass.data[DOMAIN]["alarmcreatemessage"] = json_dict.get("Message")
-            hass.data[DOMAIN]["alarmownerid"] = json_dict.get("OwnerID")
-            hass.data[DOMAIN]["alarmstatus"] = json_dict.get("Status")
+            hass.data[DOMAIN]["alarm_id"] = result.get("AlarmID")
+            hass.data[DOMAIN]["alarmcreatemessage"] = result.get("Message")
+            hass.data[DOMAIN]["alarmownerid"] = result.get("OwnerID")
+            hass.data[DOMAIN]["alarmstatus"] = result.get("Status")
             hass.data[DOMAIN]["alarmlasteventtype"] = "alarm.status.created"
             hass.data[DOMAIN]["alarmtype"] = ALARM_TYPE_SECURITY
 
             PendingAlarmComponent.set_pendingalarm(None)
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to create security alarm: %s", e)
 
 async def async_createmonitoringalarm(pendingAlarm):
     """Call the API to create a monitoring alarm."""
@@ -185,45 +179,34 @@ async def async_createmonitoringalarm(pendingAlarm):
 
     systemid = hass.data[DOMAIN].get("systemid") 
     system_psk = hass.data[DOMAIN].get("system_psk")
-
-    url = SECURITY_API + "createmonitoringalarm/0"
-    headers = {
-        "accept": "application/json, text/html",
-        "system_psk": system_psk,
-        "eh_system_id": systemid,
-        "Content-Type": "application/json; charset=utf-8",
-    }
+    id_token = hass.data[DOMAIN].get("id_token")
 
     #TODO: Jermie: replace hardcoded sensor
-    payload = (
-        '{"sensor_device_class":"'
-        + "smoke"
-        + '", "sensor_device_name":"'
-        + "smoke alarm"
-        + '"}'
-    )
+    alarm_data = {
+        "sensor_device_class": "medical",
+        "sensor_device_name": "medical alert"
+    }
 
-    _LOGGER.info("Calling create monitoring alarm API with payload: %s", payload)
+    _LOGGER.info("Calling create medical alarm API with payload: %s", alarm_data)
 
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(url, headers=headers, json=json.loads(payload)) as response,
-    ):
-        _LOGGER.debug("API response status: %s", response.status)
-        _LOGGER.debug("API response headers: %s", response.headers)
-        content = await response.text()
-        _LOGGER.debug("API response content: %s", content)
+    async with OasiraAPIClient(
+        system_id=systemid,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            result = await api_client.create_monitoring_alarm(system_psk, alarm_data)
+            _LOGGER.debug("API response content: %s", result)
 
-        if response is not None:
-            json_dict = json.loads(content)
-            hass.data[DOMAIN]["alarm_id"] = json_dict["AlarmID"]
-            hass.data[DOMAIN]["alarmcreatemessage"] = json_dict["Message"]
-            hass.data[DOMAIN]["alarmownerid"] = json_dict["OwnerID"]
-            hass.data[DOMAIN]["alarmstatus"] = json_dict["Status"]
+            hass.data[DOMAIN]["alarm_id"] = result["AlarmID"]
+            hass.data[DOMAIN]["alarmcreatemessage"] = result["Message"]
+            hass.data[DOMAIN]["alarmownerid"] = result["OwnerID"]
+            hass.data[DOMAIN]["alarmstatus"] = result["Status"]
             hass.data[DOMAIN]["alarmlasteventtype"] = "alarm.status.created"
             hass.data[DOMAIN]["alarmtype"] = ALARM_TYPE_MONITORING
 
             PendingAlarmComponent.set_pendingalarm(None)
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to create monitoring alarm: %s", e)
 
 async def async_createmedicalalertalarm(pendingAlarm):
     """Call the API to create a medical alarm."""
@@ -244,44 +227,33 @@ async def async_createmedicalalertalarm(pendingAlarm):
     systemid = hass.data[DOMAIN].get("systemid") 
     system_psk = hass.data[DOMAIN].get("system_psk")
 
-    url = SECURITY_API + "createmedicalalarm/0"
-    headers = {
-        "accept": "application/json, text/html",
-        "system_psk": system_psk,
-        "eh_system_id": systemid,
-        "Content-Type": "application/json; charset=utf-8",
+    alarm_data = {
+        "sensor_device_class": "medical",
+        "sensor_device_name": "medical alert"
     }
-    payload = (
-        '{"sensor_device_class":"'
-        + "safety"
-        + '", "sensor_device_name":"'
-        + "medicalalertsensor"
-        + '"}'
-    )
 
-    _LOGGER.info("Calling create medical alert alarm API with payload: %s", payload)
+    _LOGGER.info("Calling create medical alarm API with payload: %s", alarm_data)
 
-    async with (
-        aiohttp.ClientSession() as session,
-        session.post(url, headers=headers, json=json.loads(payload)) as response,
-    ):
-        _LOGGER.debug("API response status: %s", response.status)
-        _LOGGER.debug("API response headers: %s", response.headers)
+    id_token = hass.data[DOMAIN].get("id_token")
 
-        content = await response.text()
+    async with OasiraAPIClient(
+        system_id=systemid,
+        id_token=id_token,
+    ) as api_client:
+        try:
+            result = await api_client.create_medical_alarm(system_psk, alarm_data)
+            _LOGGER.debug("API response content: %s", result)
 
-        _LOGGER.debug("API response content: %s", content)
-
-        if response is not None:
-            json_dict = json.loads(content)
-            hass.data[DOMAIN]["alarm_id"] = json_dict["AlarmID"]
-            hass.data[DOMAIN]["alarmcreatemessage"] = json_dict["Message"]
-            hass.data[DOMAIN]["alarmownerid"] = json_dict["OwnerID"]
-            hass.data[DOMAIN]["alarmstatus"] = json_dict["Status"]
+            hass.data[DOMAIN]["alarm_id"] = result["AlarmID"]
+            hass.data[DOMAIN]["alarmcreatemessage"] = result["Message"]
+            hass.data[DOMAIN]["alarmownerid"] = result["OwnerID"]
+            hass.data[DOMAIN]["alarmstatus"] = result["Status"]
             hass.data[DOMAIN]["alarmlasteventtype"] = "alarm.status.created"
             hass.data[DOMAIN]["alarmtype"] = ALARM_TYPE_MED_ALERT
 
             PendingAlarmComponent.set_pendingalarm(None)
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to create medical alarm: %s", e)
 
 async def async_cancelalarm(hass: HomeAssistant):
     """Call the API to create a medical alarm."""
@@ -310,37 +282,32 @@ async def async_cancelalarm(hass: HomeAssistant):
 
             systemid = hass.data[DOMAIN].get("systemid")
             system_psk = hass.data[DOMAIN].get("system_psk")
-
-            url = SECURITY_API + "cancelalarm/" + alarmid
-            headers = {
-                "accept": "application/json, text/html",
-                "system_psk": system_psk,
-                "eh_system_id": systemid,
-                "Content-Type": "application/json; charset=utf-8",
-            }
+            id_token = hass.data[DOMAIN].get("id_token")
 
             _LOGGER.info("Calling cancel alarm API")
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers) as response:
-                    _LOGGER.debug("API response status: %s", response.status)
-                    _LOGGER.debug("API response headers: %s", response.headers)
-                    content = await response.text()
-                    _LOGGER.debug("API response content: %s", content)
+            async with OasiraAPIClient(
+                system_id=systemid,
+                id_token=id_token,
+            ) as api_client:
+                try:
+                    result = await api_client.cancel_alarm(system_psk, alarmid)
+                    _LOGGER.debug("API response content: %s", result)
 
                     # {"status":"CANCELED","created_at":"2024-09-21T15:13:24.895Z"}
-                    if content is not None:
-                        json_dict = json.loads(content)
-                        alarmstatus = json_dict["status"]
+                    alarmstatus = result["status"]
 
-                        hass.data[DOMAIN]["alarm_id"] = ""
-                        hass.data[DOMAIN]["alarmcreatemessage"] = ""
-                        hass.data[DOMAIN]["alarmownerid"] = ""
-                        hass.data[DOMAIN]["alarmstatus"] = ""
-                        hass.data[DOMAIN]["alarmlasteventtype"] = alarmstatus
-                        hass.data[DOMAIN]["alarmtype"] = ""
+                    hass.data[DOMAIN]["alarm_id"] = ""
+                    hass.data[DOMAIN]["alarmcreatemessage"] = ""
+                    hass.data[DOMAIN]["alarmownerid"] = ""
+                    hass.data[DOMAIN]["alarmstatus"] = ""
+                    hass.data[DOMAIN]["alarmlasteventtype"] = alarmstatus
+                    hass.data[DOMAIN]["alarmtype"] = ""
 
-                        return content
+                    return result
+                except OasiraAPIError as e:
+                    _LOGGER.error("Failed to cancel alarm: %s", e)
+                    return None
     return None
 
 async def async_getalarmstatus(hass: HomeAssistant):
@@ -357,28 +324,23 @@ async def async_getalarmstatus(hass: HomeAssistant):
 
         systemid = hass.data[DOMAIN]["systemid"]
         system_psk = hass.data[DOMAIN]["system_psk"]
-
-        url = SECURITY_API + "getalarmstatus/" + alarmid
-        headers = {
-            "accept": "application/json, text/html",
-            "system_psk": system_psk,
-            "eh_system_id": systemid,
-            "Content-Type": "application/json; charset=utf-8",
-        }
+        id_token = hass.data[DOMAIN].get("id_token")
 
         _LOGGER.info("Calling get alarm status API")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers) as response:
-                _LOGGER.debug("API response status: %s", response.status)
-                _LOGGER.debug("API response headers: %s", response.headers)
-                content = await response.text()
-                _LOGGER.debug("API response content: %s", content)
+        async with OasiraAPIClient(
+            system_id=systemid,
+            id_token=id_token,
+        ) as api_client:
+            try:
+                result = await api_client.get_alarm_status(system_psk, alarmid)
+                _LOGGER.debug("API response content: %s", result)
 
-                if content is not None:
-                    json_dict = json.loads(content)
-                    alarmstatus = json_dict["status"]
-                    hass.states.async_set(DOMAIN + ".alarmstatus", alarmstatus)
+                alarmstatus = result["status"]
+                hass.states.async_set(DOMAIN + ".alarmstatus", alarmstatus)
 
-                return content
+                return result
+            except OasiraAPIError as e:
+                _LOGGER.error("Failed to get alarm status: %s", e)
+                return None
     return None

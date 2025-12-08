@@ -4,12 +4,6 @@ import json
 import logging
 from typing import Optional, List, Dict, Any
 import aiohttp
-import asyncio
-import os
-import requests
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
-
 import time
 from google.auth import jwt
 from google.auth.crypt import rsa
@@ -19,7 +13,8 @@ from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, NAME, CUSTOMER_API
+from oasira import OasiraAPIClient, OasiraAPIError
+from .const import DOMAIN, NAME
 from .oasiranotificationdevice import oasiranotificationdevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,13 +24,6 @@ GOOGLE_OAUTH_URL = "https://oauth2.googleapis.com/token"
 FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 
 FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
-
-SERVICE_ACCOUNT_URL = CUSTOMER_API + "getfirebaseconfig/0"  # your web service endpoint
-
-headers = {
-    "oasira_psk": "665e459692f515b1528312cf",   
-    "Content-Type": "application/json"
-}
 
 
 class OasiraPerson(SensorEntity, RestoreEntity):
@@ -330,21 +318,11 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         """Generate a Firebase access token using service account JSON (async + HA safe)."""
 
         try:
-            headers = {
-                "oasira_psk": "665e459692f515b1528312cf",
-                "Content-Type": "application/json"
-            }
+            # ---- Fetch service account JSON using API client ----
+            async with OasiraAPIClient() as client:
+                firebase_config = await client.get_firebase_config()
 
-            # ---- Fetch service account JSON ----
-            async with aiohttp.ClientSession() as session:
-                async with session.get(SERVICE_ACCOUNT_URL, headers=headers) as resp:
-                    if resp.status != 200:
-                        _LOGGER.error("Failed to fetch service account JSON: %s", resp.status)
-                        return None
-
-                    data = await resp.json()
-
-            google_firebase_raw = data.get("results", [{}])[0].get("Google_Firebase")
+            google_firebase_raw = firebase_config.get("Google_Firebase")
             if not google_firebase_raw:
                 _LOGGER.error("Missing Google_Firebase in response")
                 return None
@@ -383,6 +361,9 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
                     return result["access_token"]
 
+        except OasiraAPIError as e:
+            _LOGGER.error("Failed to fetch Firebase config: %s", e)
+            return None
         except Exception as e:
             _LOGGER.exception("Failed to refresh Firebase access token: %s", e)
             return None
@@ -405,7 +386,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             if not device.DeviceToken:
                 continue
 
-            #TODO: re-enable data payload
+            #TODO: Jermie: re-enable data payload
             #payload = {
             #    "message": {
             #        "token": device.DeviceToken,

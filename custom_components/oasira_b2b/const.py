@@ -20,17 +20,11 @@ from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.components.sensor.const import DOMAIN as SENSOR_DOMAIN
 from homeassistant.components.switch.const import DOMAIN as SWITCH_DOMAIN
 
-#TODO: Jermie Customize These By Product/Brand
-#Also find/replace oasira_b2b
 VERSION = "1.0.6"
 NAME = "Oasira Business"
 name_internal = "oasira_business"
 MANUFACTURER = "@oasira"
 DOMAIN = "oasira_b2b"
-
-SECURITY_API = "https://securityapi.effortlesshome.co/"
-CUSTOMER_API = "https://cust.effortlesshome.co/"
-HA_URL = "http://oasira.local:8123"
 
 # Labels we want to ensure exist
 LABELS = [

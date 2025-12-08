@@ -3,6 +3,7 @@ import logging
 from .const import DOMAIN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.components import webhook
+from aiohttp import web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,12 +30,13 @@ class BroadcastWebhook:
 
         return True
 
-    async def handle_webhook(self, hass: HomeAssistant, webhook_id, request) -> None:
+    async def handle_webhook(self, hass: HomeAssistant, webhook_id, request):
         """Handle incoming webhook requests."""
         _LOGGER.info("In broadcast handle webhook")
 
         if request.method not in ["POST", "PUT"]:
-            return  # Ignore methods other than POST or PUT
+            _LOGGER.warning("Invalid method: %s", request.method)
+            return web.Response(status=405, text="Method not allowed")
 
         try:
             responsejson = await request.json()
@@ -59,9 +61,14 @@ class BroadcastWebhook:
             )
             _LOGGER.debug("Fired event %s_broadcast_received", DOMAIN)
 
-        except ValueError:
-            _LOGGER.info("Webhook JSON error: invalid JSON body")
-            return
+            return web.Response(status=200, text="OK")
+
+        except ValueError as e:
+            _LOGGER.error("Webhook JSON error: invalid JSON body - %s", e)
+            return web.Response(status=400, text="Invalid JSON")
+        except Exception as e:
+            _LOGGER.error("Error processing broadcast webhook: %s", e)
+            return web.Response(status=500, text="Internal server error")
 
 async def async_remove(self) -> None:
     """Unregister the webhook when the integration is removed."""
