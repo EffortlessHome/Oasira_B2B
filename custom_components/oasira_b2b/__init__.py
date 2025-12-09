@@ -246,9 +246,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     
                     # Create Home Assistant person entity using person component
                     try:
-                        person_component = hass.data.get("person")
-                        if person_component is not None:
-                            storage_collection = person_component.get("storage_collection")
+                        person_data = hass.data.get("person")
+                        if person_data is not None:
+                            # person_data is a tuple: (EntityComponent, StorageCollection)
+                            # We need the StorageCollection which is the second element
+                            if isinstance(person_data, tuple) and len(person_data) > 1:
+                                storage_collection = person_data[1]
+                            else:
+                                # Fallback if it's a different structure
+                                storage_collection = person_data.get("storage_collection") if hasattr(person_data, "get") else None
+                            
                             if storage_collection is not None:
                                 # Check if person already exists
                                 existing = None
@@ -391,6 +398,59 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.bus.async_listen_once(
         homeassistant.core.EVENT_HOMEASSISTANT_STARTED, after_home_assistant_started
     )
+
+    # Start Firebase token refresh task (refresh every 50 minutes, tokens expire in 60 minutes)
+    async def refresh_firebase_token():
+        """Periodically refresh the Firebase ID token."""
+        refresh_token = entry.data.get("refresh_token")
+        
+        if not refresh_token:
+            _LOGGER.warning("No refresh token available - cannot refresh Firebase token")
+            return
+        
+        while True:
+            try:
+                # Wait 50 minutes before refreshing (tokens expire in 60 minutes)
+                await asyncio.sleep(50 * 60)
+                
+                _LOGGER.info("Refreshing Firebase ID token...")
+                
+                async with OasiraAPIClient() as api_client:
+                    result = await api_client.firebase_refresh_token(refresh_token)
+                    
+                    new_id_token = result.get("idToken")
+                    new_refresh_token = result.get("refreshToken")
+                    
+                    if new_id_token:
+                        # Update the token in hass.data
+                        hass.data[DOMAIN]["id_token"] = new_id_token
+                        
+                        # Update the config entry data
+                        hass.config_entries.async_update_entry(
+                            entry,
+                            data={
+                                **entry.data,
+                                "id_token": new_id_token,
+                                "refresh_token": new_refresh_token or refresh_token,
+                            }
+                        )
+                        
+                        # Update the refresh token for next iteration
+                        if new_refresh_token:
+                            refresh_token = new_refresh_token
+                        
+                        _LOGGER.info("✅ Firebase ID token refreshed successfully")
+                    else:
+                        _LOGGER.error("Failed to refresh Firebase token - no idToken in response")
+                        
+            except OasiraAPIError as e:
+                _LOGGER.error("Failed to refresh Firebase token: %s", e)
+                # Continue trying even if refresh fails
+            except Exception as e:
+                _LOGGER.exception("Unexpected error refreshing Firebase token: %s", e)
+    
+    # Start the refresh task
+    hass.async_create_task(refresh_firebase_token())
 
     return True
 
@@ -1155,12 +1215,14 @@ async def handle_energy_suggestion():
 async def handle_oasira_location_update_webhook(hass, webhook_id, request):
     """Register Oasira location update service."""
 
-    _LOGGER.info("[Oasira] Handling location update webhook")
+    _LOGGER.info("[Oasira] 📍 Handling location update webhook")
+    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
 
     try:
         data = await request.json()
+        _LOGGER.info("[Oasira] 📍 Location update payload: %s", data)
     except Exception as e:
-        _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
+        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
         return web.Response(status=400, text="Invalid JSON")
 
     ####TODO: Jermie: get user's email here and link this device tracker to them (local and online) #####
@@ -1170,13 +1232,16 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
     lon = data.get("longitude")
     accuracy = data.get("accuracy", 30.0)
 
+    _LOGGER.info("[Oasira] 📍 Parsed data - device_id: %s, lat: %s, lon: %s, accuracy: %s", device_id, lat, lon, accuracy)
+
     if not device_id or lat is None or lon is None:
-        _LOGGER.error("[Oasira] Missing required fields")
+        _LOGGER.error("[Oasira] ❌ Missing required fields - device_id: %s, lat: %s, lon: %s", device_id, lat, lon)
         return web.Response(status=400, text="Missing required fields")
 
     device_id_new = device_id.lower().replace('@', '_').replace('.', '_')
-
     entity_id = f"device_tracker.{device_id_new}"
+
+    _LOGGER.info("[Oasira] 📍 Creating/updating device tracker: %s", entity_id)
 
     # Update or create entity
     hass.states.async_set(
@@ -1191,7 +1256,8 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
         },
     )
 
-    return web.Response(status=200, text="OK")
+    _LOGGER.info("[Oasira] ✅ Location update successful for %s", entity_id)
+    return web.json_response({"status": "success", "message": "Location updated"})
 
 #sampledata
 #{
@@ -1204,12 +1270,14 @@ async def handle_oasira_location_update_webhook(hass, webhook_id, request):
 async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     """Handle incoming Oasira Push Token webhook (device token)."""
 
-    _LOGGER.info("[Oasira] Handling push token webhook")
+    _LOGGER.info("[Oasira] 🔔 Handling push token webhook")
+    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
 
     try:
         data = await request.json()
+        _LOGGER.info("[Oasira] 🔔 Push token payload: %s", {k: v if k != 'token' else f"{v[:20]}..." for k, v in data.items()})
     except Exception as e:
-        _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
+        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
         return web.Response(status=400, text="Invalid JSON")
 
     email = data.get("email")
@@ -1217,60 +1285,83 @@ async def handle_oasira_push_token_webhook(hass, webhook_id, request):
     device_name = data.get("device_name")
     platform_name = data.get("platform")
 
+    _LOGGER.info("[Oasira] 🔔 Parsed data - email: %s, device_name: %s, platform: %s, token_length: %s", 
+                 email, device_name, platform_name, len(token) if token else 0)
+
     if not email:
-        _LOGGER.error("[Oasira] Webhook called without 'email' field.")
+        _LOGGER.error("[Oasira] ❌ Webhook called without 'email' field.")
         return web.Response(status=400, text="Missing email field")
 
-    targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
+    _LOGGER.info("[Oasira] 🔔 Searching for person among %s registered persons", len(persons))
+    
+    targetperson = None
     for person in persons:
         if person.name == email:
             targetperson = person
             break
 
     if targetperson is not None:
-        _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
+        _LOGGER.info("[Oasira] 🔔 Found target person: %s", targetperson.name)
         await targetperson.async_set_notification_devices(hass, token, device_name, platform_name)
-        return web.Response(status=200, text="OK")
+        _LOGGER.info("[Oasira] ✅ Push token registered successfully for %s", email)
+        return web.json_response({"status": "success", "message": "Token registered"})
     else:
-        _LOGGER.warning("[Oasira] Person not found for email: %s", email)
+        _LOGGER.warning("[Oasira] ❌ Person not found for email: %s (available: %s)", 
+                       email, [p.name for p in persons])
         return web.Response(status=404, text="Person not found")
 
 async def handle_set_person_location_devices(hass, webhook_id, request):
     """Handle incoming webhook."""
 
-    _LOGGER.info("[Oasira] Handling set person location webhook")
+    _LOGGER.info("[Oasira] 📱 Handling set person tracking devices webhook")
+    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
 
     try:
         data = await request.json()
+        _LOGGER.info("[Oasira] 📱 Tracking devices payload: %s", data)
     except Exception as e:
-        _LOGGER.error("[Oasira] Invalid JSON payload: %s", e)
+        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
         return web.Response(status=400, text="Invalid JSON")
 
     email = data.get("email")
     inhometracker = data.get("inhometracker")
     remotetracker = data.get("remotetracker")
 
+    _LOGGER.info("[Oasira] 📱 Parsed data - email: %s, inhometracker: %s, remotetracker: %s", 
+                 email, inhometracker, remotetracker)
+
     if not email:
-        _LOGGER.error("[Oasira] Set Person Location Devices Webhook called without 'email' field.")
+        _LOGGER.error("[Oasira] ❌ Set Person Location Devices Webhook called without 'email' field.")
         return web.Response(status=400, text="Missing email field")
 
-    targetperson = None
     persons = hass.data.get(DOMAIN, {}).get("persons", [])
+    _LOGGER.info("[Oasira] 📱 Searching for person among %s registered persons", len(persons))
+    
+    targetperson = None
     for person in persons:
         if person.name == email:
             targetperson = person
             break
 
     if targetperson is not None:
-        _LOGGER.info("[Oasira] Push Notification Target Person: "+ targetperson.name)
+        _LOGGER.info("[Oasira] 📱 Found target person: %s", targetperson.name)
+        
         if inhometracker is not None and inhometracker != "":
+            _LOGGER.info("[Oasira] 📱 Setting local tracker: %s", inhometracker)
             await targetperson.async_set_local_tracker(inhometracker)
+        else:
+            _LOGGER.info("[Oasira] 📱 No inhometracker provided or empty")
         
         if remotetracker is not None and remotetracker != "":
+            _LOGGER.info("[Oasira] 📱 Setting remote tracker: %s", remotetracker)
             await targetperson.async_set_remote_tracker(remotetracker)
+        else:
+            _LOGGER.info("[Oasira] 📱 No remotetracker provided or empty")
         
-        return web.Response(status=200, text="OK")
+        _LOGGER.info("[Oasira] ✅ Tracking devices updated successfully for %s", email)
+        return web.json_response({"status": "success", "message": "Tracking devices updated"})
     else:
-        _LOGGER.warning("[Oasira] Person not found for email: %s", email)
+        _LOGGER.warning("[Oasira] ❌ Person not found for email: %s (available: %s)", 
+                       email, [p.name for p in persons])
         return web.Response(status=404, text="Person not found")
