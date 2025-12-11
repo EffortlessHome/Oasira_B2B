@@ -29,7 +29,6 @@ DOMAIN = "oasira_b2b"
 # Labels we want to ensure exist
 LABELS = [
     "Favorite",
-    "MatterHub",
     "NotForSecurityMonitoring",
     "SleepArea",
 ]

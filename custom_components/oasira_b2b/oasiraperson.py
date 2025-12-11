@@ -319,7 +319,10 @@ class OasiraPerson(SensorEntity, RestoreEntity):
 
         try:
             # ---- Fetch service account JSON using API client ----
-            async with OasiraAPIClient() as client:
+            # Get the id_token from hass.data for authentication
+            id_token = self.hass.data[DOMAIN].get("id_token") if self.hass else None
+            
+            async with OasiraAPIClient(id_token=id_token) as client:
                 firebase_config = await client.get_firebase_config()
 
             google_firebase_raw = firebase_config.get("Google_Firebase")

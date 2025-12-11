@@ -474,7 +474,7 @@ async def deploy_latest_config(hass: HomeAssistant):
 
     # Ensure destination directories exist
     #os.makedirs(target_themes_dir, exist_ok=True)
-    #os.makedirs(target_dir, exist_ok=True)
+    os.makedirs(target_dir, exist_ok=True)
     os.makedirs(target_blueprints_dir, exist_ok=True)
     #os.makedirs(target_packages_dir, exist_ok=True)
     #os.makedirs(target_dashboard_dir, exist_ok=True)
