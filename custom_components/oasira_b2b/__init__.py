@@ -353,6 +353,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.info("[Oasira] Webhook registered: %s", webhook_id)
 
+    webhook_id = "oasira_health_data"
+
+    webhook.async_register(
+        hass,
+        DOMAIN,
+        "Oasira Health Data",
+        webhook_id,
+        handle_oasira_health_data_webhook,
+    )
+
+    _LOGGER.info("[Oasira] Webhook registered: %s", webhook_id)
+
     register_services(hass)
 
     # Initialize the Motion Sensor Grouper
@@ -1365,3 +1377,96 @@ async def handle_set_person_location_devices(hass, webhook_id, request):
         _LOGGER.warning("[Oasira] ❌ Person not found for email: %s (available: %s)", 
                        email, [p.name for p in persons])
         return web.Response(status=404, text="Person not found")
+
+
+async def handle_oasira_health_data_webhook(hass, webhook_id, request):
+    """Handle incoming health data from mobile devices."""
+
+    _LOGGER.info("[Oasira] 🏥 Handling health data webhook")
+    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
+
+    try:
+        data = await request.json()
+        _LOGGER.info("[Oasira] 🏥 Health data payload: %s", {k: v for k, v in data.items() if k != 'email'})
+    except Exception as e:
+        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
+        return web.Response(status=400, text="Invalid JSON")
+
+    email = data.get("email")
+    timestamp = data.get("timestamp")
+
+    _LOGGER.info("[Oasira] 🏥 Processing health data for: %s at %s", email, timestamp)
+
+    if not email:
+        _LOGGER.error("[Oasira] ❌ Missing required field: email")
+        return web.Response(status=400, text="Missing required field: email")
+
+    # Find the person entity
+    persons = hass.data.get(DOMAIN, {}).get("persons", [])
+    _LOGGER.info("[Oasira] 🏥 Searching for person among %s registered persons", len(persons))
+    
+    targetperson = None
+    for person in persons:
+        if person.name == email:
+            targetperson = person
+            break
+
+    if targetperson is None:
+        _LOGGER.warning("[Oasira] ❌ Person not found for email: %s (available: %s)", 
+                       email, [p.name for p in persons])
+        return web.Response(status=404, text="Person not found")
+
+    _LOGGER.info("[Oasira] 🏥 Found target person: %s", targetperson.name)
+
+    # Store health data on the person entity
+    await targetperson.async_update_health_data(data)
+
+    # Create/update sensor entities for each health metric
+    health_metrics = {
+        "stepCount": ("steps", "mdi:walk", "steps"),
+        "heartRate": ("bpm", "mdi:heart-pulse", "measurement"),
+        "sleepHours": ("h", "mdi:sleep", "measurement"),
+        "activeMinutes": ("min", "mdi:run", "measurement"),
+        "distance": ("m", "mdi:map-marker-distance", "measurement"),
+        "caloriesBurned": ("kcal", "mdi:fire", "measurement"),
+        "bloodPressureSystolic": ("mmHg", "mdi:heart-pulse", "measurement"),
+        "bloodPressureDiastolic": ("mmHg", "mdi:heart-pulse", "measurement"),
+        "bloodOxygen": ("%", "mdi:water-percent", "measurement"),
+        "bodyTemperature": ("°C", "mdi:thermometer", "measurement"),
+        "weight": ("kg", "mdi:weight-kilogram", "measurement"),
+        "height": ("cm", "mdi:human-male-height", "measurement"),
+    }
+
+    email_sanitized = email.lower().replace('@', '_').replace('.', '_')
+    sensors_updated = 0
+
+    for metric_key, (unit, icon, state_class) in health_metrics.items():
+        value = data.get(metric_key)
+        
+        if value is not None:
+            entity_id = f"sensor.oasira_health_{email_sanitized}_{metric_key.lower()}"
+            friendly_name = f"Oasira Health {metric_key.replace('_', ' ').title()} ({email})"
+
+            _LOGGER.debug("[Oasira] 🏥 Creating/updating sensor: %s = %s %s", entity_id, value, unit)
+
+            hass.states.async_set(
+                entity_id,
+                value,
+                {
+                    "unit_of_measurement": unit,
+                    "friendly_name": friendly_name,
+                    "icon": icon,
+                    "state_class": state_class,
+                    "device_class": metric_key.lower(),
+                    "last_updated": timestamp,
+                    "source": "oasira_mobile_app",
+                },
+            )
+            sensors_updated += 1
+
+    _LOGGER.info("[Oasira] ✅ Health data processed successfully for %s - %s sensors updated", email, sensors_updated)
+    return web.json_response({
+        "status": "success", 
+        "message": f"Health data processed - {sensors_updated} metrics updated",
+        "sensors_updated": sensors_updated
+    })

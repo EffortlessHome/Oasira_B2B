@@ -40,6 +40,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
         self._local_tracker_entity_id: Optional[str] = None
         self._remote_tracker_entity_id: Optional[str] = None
         self._notification_devices: List[oasiranotificationdevice] = []
+        self._health_data: Dict[str, Any] = {}
 
         # Device registry
         self._device_registry = async_get_dev_reg(hass) if hass else None
@@ -111,6 +112,7 @@ class OasiraPerson(SensorEntity, RestoreEntity):
             "local_tracker": self._local_tracker_entity_id,
             "remote_tracker": self._remote_tracker_entity_id,
             "notification_devices": [d.to_json() for d in self._notification_devices],
+            "health_data_last_updated": self._health_data.get("timestamp"),
         }
 
     # ---- Serialization ----
@@ -424,6 +426,16 @@ class OasiraPerson(SensorEntity, RestoreEntity):
                     else:
                         _LOGGER.info("Notification sent to %s", device.Name)
 
+    async def async_update_health_data(self, health_data: Dict[str, Any]):
+        """Update health data for this person."""
+        _LOGGER.info("[OasiraPerson] Updating health data for %s", self._email)
+        
+        # Store the health data
+        self._health_data = health_data
+        
+        # Trigger state update to reflect new health data timestamp in attributes
+        if self.hass:
+            self.async_write_ha_state()
 
     def __repr__(self):
         return f"<OasiraPerson email={self._email!r} devices={len(self._notification_devices)}>"
