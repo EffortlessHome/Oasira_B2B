@@ -1,0 +1,53 @@
+blueprint:
+  name: Security Alarm Trigger
+  description: Define the devices what will trigger the security alarm (e.g. Door, Window, Motion)
+  domain: automation
+  author: Oasira Home
+  input:
+    monitoringdevice:
+      name: Security Alarm Devices
+      description: The triggering device(s)
+      selector:
+        entity:
+          domain:
+            - binary_sensor
+            - group
+          device_class:
+            - door
+            - window
+            - motion
+            - presence
+          multiple: true
+    arming_mode:
+      name: Arming Mode
+      description: The arming mode to set.
+      default: armed_away
+      selector:
+        select:
+          options:
+            - armed_home
+            - armed_away
+    additional_actions:
+      name: Additional Actions
+      description: Add additional actions to execute (Optional)
+      default: []
+      selector:
+        action: {}
+trigger:
+  - platform: state
+    entity_id: !input monitoringdevice
+    to: "on"
+variables:
+  triggering_sensor: "{{ trigger }}"
+conditions:
+  - condition: state
+    entity_id: alarm_control_panel.oasira_b2c_alarm_panel
+    state: !input arming_mode
+action:
+  - action: alarm_control_panel.alarm_trigger
+    metadata: {}
+    data: {}
+    target:
+      entity_id: alarm_control_panel.oasira_b2c_alarm_panel
+  - choose: []
+    default: !input additional_actions

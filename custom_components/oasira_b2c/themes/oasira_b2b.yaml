@@ -1,0 +1,100 @@
+oasira_b2c:
+  # Spacing & Card Style
+  horizontal-stack-card-margin: 0px 8px
+  vertical-stack-card-margin: 8px 0px
+  grid-card-gap: 16px
+  ha-card-border-width: "0px"
+  ha-card-border-radius: 12px
+  masonry-view-card-margin: 32px 16px
+
+  # Brand Colors
+  primary-color: "#5AAFFF"       # Friendly blue
+  accent-color: "#A78BFA"        # Gentle purple accent
+  primary-background-color: "#F9FAFB"  # Off-white background
+  secondary-background-color: "#FFFFFF"
+  divider-color: "#E5E7EB"
+
+  # Text Colors
+  primary-text-color: "#1F2937"    # Charcoal gray
+  secondary-text-color: "#4B5563"
+  disabled-text-color: "#9CA3AF"
+  text-accent-color: "#5AAFFF"
+
+  # Header
+  app-header-background-color: "#FFFFFF"
+  app-header-text-color: "#1F2937"
+  app-header-selection-bar-color: transparent
+  app-header-edit-background-color: "#F3F4F6"
+  app-header-edit-text-color: "#1F2937"
+
+  # Cards
+  card-background-color: "#FFFFFF"
+  ha-card-background: "#FFFFFF"
+  ha-card-border-color: "#E5E7EB"
+  paper-listbox-background-color: "#F3F4F6"
+
+  # Sidebar
+  sidebar-background-color: "#F3F4F6"
+  sidebar-icon-color: "#4B5563"
+  sidebar-text-color: "#4B5563"
+  sidebar-selected-icon-color: "#5AAFFF"
+  sidebar-selected-text-color: "#5AAFFF"
+
+  # Buttons & Icons
+  paper-item-icon-color: "#4B5563"
+  mdc-button-outline-color: "#E5E7EB"
+  state-icon-color: "#4B5563"
+
+  # Sliders
+  paper-slider-knob-color: "#1F2937"
+  paper-slider-active-color: "#5AAFFF"
+  paper-slider-secondary-color: "#E5E7EB"
+
+  # Switches
+  switch-checked-button-color: "#5AAFFF"
+  switch-checked-track-color: "#BFDBFE"
+  switch-unchecked-button-color: "#9CA3AF"
+  switch-unchecked-track-color: "#E5E7EB"
+
+  paper-toggle-button-checked-button-color: "#5AAFFF"
+  paper-toggle-button-checked-bar-color: "#BFDBFE"
+  paper-toggle-button-unchecked-button-color: "#9CA3AF"
+  paper-toggle-button-unchecked-bar-color: "#E5E7EB"
+
+  # Inputs & Fields
+  input-fill-color: "#F3F4F6"
+  input-ink-color: "#1F2937"
+  input-idle-line-color: "#E5E7EB"
+  input-hover-line-color: "#5AAFFF"
+  mdc-select-fill-color: "#F3F4F6"
+  mdc-select-ink-color: "#1F2937"
+  mdc-select-label-ink-color: "#4B5563"
+  mdc-select-idle-line-color: "#E5E7EB"
+  mdc-select-hover-line-color: "#5AAFFF"
+
+  # Modal & Surfaces
+  mdc-theme-surface: "#FFFFFF"
+  mdc-checkbox-unchecked-color: "#9CA3AF"
+
+  # Brand Color Variables
+  blue-color: "#5AAFFF"
+  purple-color: "#A78BFA"
+  orange-color: "#FB923C"
+  grey-color: "#9CA3AF"
+
+  # Light & Dark Mode Contrasts
+  modes:
+    light:
+      contrast1: "#FFFFFF"
+      contrast2: "#F3F4F6"
+      contrast3: "#E5E7EB"
+      contrast9: "#4B5563"
+      contrast20: "#1F2937"
+      color-tint: "0.20"
+    dark:
+      contrast1: "#111827"
+      contrast2: "#1F2937"
+      contrast3: "#374151"
+      contrast9: "#9CA3AF"
+      contrast20: "#F9FAFB"
+      color-tint: "0.15"

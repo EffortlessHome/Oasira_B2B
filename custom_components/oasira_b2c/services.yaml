@@ -1,0 +1,122 @@
+createcleanmotionfilesservice:
+  description: Service to clean motion files
+  fields:
+    age:
+      name: age
+      description: The age of the files to remove. Default 30 days.
+      example: 30
+
+add_label_to_entity:
+  description: add a label to an entity
+  fields:
+    entity_id:
+      name: Entity
+      description: The the entity to update.
+      example: "entity.name"
+      required: true
+      selector:
+        entity:
+
+    label:
+      name: The label to apply
+      description: The new label to assign to the entity.
+      example: "favorite"
+      required: true
+      selector:
+        label:
+
+notify_person_service:
+  description: Notify a person
+  fields:
+    target:
+      name: target
+      description: The entity_id of the Oasira person entity to notify
+      example: "sensor.jermie_oasira_ai"
+    message:
+      name: Message
+      description: The message to send
+      example: 'Hello, this is a notification'
+    title:
+      name: Title
+      description: The title of the notification
+      example: 'Notification'
+    data:
+      name: data
+      description: attached data to the message
+      example: 'image: "test.jpg"'
+
+remove_person_devices_service:
+  description: Remove a person's devices
+  fields:
+    entity_id:
+      name: entity_id
+      description: The entity_id of the Oasira person entity to remove devices from
+      example: "sensor.jermie_oasira_ai"
+
+create_alert_service:
+  description: Create an alert record
+  fields:
+    alert_type:
+      name: alert_type
+      description: The type of alert
+      example: Humidity Alert
+    alert_description:
+      name: alert_description
+      description: Details about the alert
+      example: 'Details about the alert'
+    status:
+      name: status
+      description: The status of the alert
+      example: 'Active'
+
+
+confirmpendingalarmservice:
+  description: Confirm pending Oasira alarm
+
+cancelalarmservice:
+  description: Cancel Oasira alarm
+
+getalarmstatusservice:
+  description: Get Oasira alarm status
+
+update_entity:
+  name: Update entity
+  description: Updates a entity in the entity registry with an area
+  fields:
+    entity_id:
+      name: Entity
+      description: The the entity to update.
+      example: "entity.name"
+      required: true
+      selector:
+        entity:
+
+    area_id:
+      name: Area
+      description: The new area to assign to the entity.
+      example: "living_room"
+      required: true
+      selector:
+        area:
+
+set_in_bed_state:
+  name: Set In Bed State
+  description: Set In Bed state True/False For An Area
+  fields:
+    state:
+      name: state
+      description: Set the in bed sensor to on (True/False)
+      example: "True"
+      required: true
+
+    area_id:
+      name: Area
+      description: The area
+      example: "living_room"
+      required: true
+      selector:
+        area:  
+
+deploylatestconfig:
+  name: deploylatestconfig
+  description: Deploy latest Oasira config

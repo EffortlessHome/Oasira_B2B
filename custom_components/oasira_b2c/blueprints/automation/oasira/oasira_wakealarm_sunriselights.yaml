@@ -1,0 +1,116 @@
+blueprint:
+  name: Wake Up Light
+  description: "Turn on lamps gradually brighter based on wake time."
+  domain: automation
+  author: Oasira Home
+
+  input:
+    min_mireds:
+      name: Min Mireds
+      description: Minimum color temperature (mireds), ending value.
+      selector:
+        color_temp: {}
+      default: 200
+
+    max_mireds_selector:
+      name: Max Mireds
+      description: Maximum color temperature (mireds), starting value.
+      selector:
+        color_temp: {}
+      default: 400
+
+    max_brightness_pct:
+      name: Max Brightness (%)
+      description: Maximum brightness percentage.
+      selector:
+        number:
+          min: 1
+          max: 100
+      default: 80
+
+    alarm_length:
+      name: Alarm Length (minutes)
+      description: Time from start to max brightness.
+      selector:
+        number:
+          min: 1
+          max: 60
+      default: 10
+
+    steps_per_minute:
+      name: Steps per Minute
+      description: Number of brightness/color temp adjustments per minute.
+      selector:
+        number:
+          min: 1
+          max: 12
+      default: 4
+
+    target_light:
+      name: Target Light
+      description: A single light or group to control.
+      selector:
+        entity:
+          domain: light
+
+    light_timeout:
+      name: Light Timeout (minutes)
+      description: Delay to turn off light after reaching max brightness.
+      selector:
+        number:
+          min: 0
+          max: 60
+      default: 5
+
+variables:
+  steps: "{{ alarm_length * steps_per_minute }}"
+  min_brightness: >
+    {{ state_attr(target_light, 'brightness') if state_attr(target_light, 'brightness') else 1 }}
+  max_brightness: "{{ max_brightness_pct * 2.55 }}"
+  max_mireds: >
+    {{ state_attr(target_light, 'color_temp') if state_attr(target_light, 'color_temp') else max_mireds_selector }}
+  mireds_step: "{{ (max_mireds - min_mireds) / steps }}"
+  bright_step: "{{ (max_brightness - min_brightness) / steps }}"
+  start_time: "{{ as_timestamp(now()) }}"
+  individual_step: "{{ 60 / steps_per_minute }}"
+
+trigger:
+  platform: time
+  at: "06:00:00"
+
+action:
+  - service: light.turn_on
+    data:
+      brightness: "{{ min_brightness }}"
+      color_temp: "{{ max_mireds }}"
+    target:
+      entity_id: !input target_light
+
+  - repeat:
+      until:
+        - condition: or
+          conditions:
+            - "{{ is_state(target_light, 'off') }}"
+            - "{{ state_attr(target_light, 'brightness') >= max_brightness }}"
+            - "{{ state_attr(target_light, 'color_temp') <= min_mireds }}"
+            - "{{ (((as_timestamp(now()) - start_time) / individual_step) | round(0, 'ceil')) > steps }}"
+      sequence:
+        - variables:
+            steps_to_now: "{{ ((as_timestamp(now()) - start_time) / individual_step) | round(0, 'ceil') }}"
+            brightness: "{{ min_brightness + (bright_step * steps_to_now) | round(0, 'ceil') }}"
+            mireds: "{{ max_mireds - (mireds_step * steps_to_now) }}"
+        - delay: "{{ individual_step }}"
+        - service: light.turn_on
+          data:
+            brightness: "{{ brightness }}"
+            color_temp: "{{ mireds }}"
+            transition: "{{ individual_step - 1 }}"
+          target:
+            entity_id: !input target_light
+
+  - delay:
+      minutes: "{{ light_timeout }}"
+
+  - service: light.turn_off
+    target:
+      entity_id: !input target_light
