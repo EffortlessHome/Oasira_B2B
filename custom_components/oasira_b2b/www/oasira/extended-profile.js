@@ -267,7 +267,6 @@ class ExtendedProfile extends HTMLElement {
       const response = await fetch("https://cust.effortlesshome.co/getsystemusersbysystemid/0", {
         method: "GET",
         headers: {
-          "customer_psk": customertoken,
           "eh_system_id": systemId,
           "eh_customer_id": customerId,
           "Accept": "*/*",

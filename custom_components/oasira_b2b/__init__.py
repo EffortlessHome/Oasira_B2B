@@ -164,11 +164,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             parsed_data = await api_client.get_customer_and_system()
 
             hass.data[DOMAIN] = {
-                "customer_psk": parsed_data["psk"],
                 "fullname": parsed_data["fullname"],
                 "phonenumber": parsed_data["phonenumber"],
                 "emailaddress": parsed_data["emailaddress"],
-                "system_psk": parsed_data["ha_security_token"],
                 "ha_token": parsed_data["ha_token"],
                 "ha_url": parsed_data["ha_url"],
                 "ai_key": parsed_data["ai_key"],
@@ -200,15 +198,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Failed to fetch customer/system data: %s", e)
             raise HomeAssistantError(f"Failed to fetch customer/system data: {e}") from e
 
-    #system_psk = hass.data[DOMAIN]["system_psk"]
-    #customer_psk = hass.data[DOMAIN]["customer_psk"]
     #ha_url = hass.data[DOMAIN]["ha_url"]    
 
     #hass.states.async_set("sensor.customerid", customer_id, {"dev_mode": "off"})
     #hass.states.async_set("sensor.systemid", system_id, {"dev_mode": "off"})
-    #hass.states.async_set("sensor.token", system_psk, {"dev_mode": "off"})
     #hass.states.async_set("sensor.ha_url", ha_url, {"dev_mode": "off"})
-    #hass.states.async_set("sensor.customertoken", customer_psk, {"dev_mode": "off"})
 #    hass.states.async_set("sensor.user", username, {"dev_mode": "off"})
 
     device_registry = dr.async_get(hass)
@@ -703,7 +697,6 @@ async def createevent(calldata) -> None:
 
                 # Call the API to create event
                 systemid = hass.data[DOMAIN]["systemid"]
-                system_psk = hass.data[DOMAIN]["system_psk"]
                 id_token = hass.data[DOMAIN].get("id_token")
 
                 event_data = {
@@ -715,7 +708,6 @@ async def createevent(calldata) -> None:
 
                 async with OasiraAPIClient(
                     system_id=systemid,
-                    system_psk=system_psk,
                     id_token=id_token,
                 ) as api_client:
                     try:
@@ -746,14 +738,12 @@ async def createalert(calldata) -> None:
 
     # Call the API to create alert
     systemid = hass.data[DOMAIN]["systemid"]  
-    system_psk = hass.data[DOMAIN]["system_psk"]
     id_token = hass.data[DOMAIN].get("id_token")
 
     _LOGGER.info("Calling alert API with payload: %s", alert_data)
 
     async with OasiraAPIClient(
         system_id=systemid,
-        system_psk=system_psk,
         id_token=id_token,
     ) as api_client:
         try:
@@ -767,9 +757,7 @@ async def createalert(calldata) -> None:
 async def cancelalarm(calldata):
     """Cancel alarm."""
     hass = HASSComponent.get_hass()
-
     return await async_cancelalarm(hass)
-
 
 async def getalarmstatus(calldata):
     """Get alarm status."""

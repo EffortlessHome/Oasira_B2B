@@ -117,17 +117,12 @@ action:
     target: !input light_target
 
   - wait_for_trigger:
-      platform: state
-      entity_id: !input motion_entity
-      from:
-        - "on"
-      to:
-        - "off"
-      trigger: state
-      for:
-        hours: 0
-        minutes: 0
-        seconds: !input no_motion_wait
+      - trigger: state
+        entity_id: !input motion_entity
+        from: "on"
+        to: "off"
+        for:
+          seconds: !input no_motion_wait
 
   - service: light.turn_off
     target: !input light_target

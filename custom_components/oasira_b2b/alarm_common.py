@@ -125,11 +125,9 @@ async def async_createsecurityalarm(pendingAlarm):
     #    return
 
     systemid = hass.data[DOMAIN].get("systemid")
-    system_psk = hass.data[DOMAIN].get("system_psk")
 
     _LOGGER.info("System ID: %s", hass.data[DOMAIN].get("systemid"))  
     _LOGGER.info("Email Address: %s", hass.data[DOMAIN].get("username"))  
-    _LOGGER.info("Token: %s", system_psk)
 
     #TODO: Jermie replace hardcoded sensor
     alarm_data = {
@@ -146,7 +144,7 @@ async def async_createsecurityalarm(pendingAlarm):
         id_token=id_token,
     ) as api_client:
         try:
-            result = await api_client.create_security_alarm(system_psk, alarm_data)
+            result = await api_client.create_security_alarm(alarm_data)
             _LOGGER.info("API response content: %s", result)
 
             hass.data[DOMAIN]["alarm_id"] = result.get("AlarmID")
@@ -178,7 +176,6 @@ async def async_createmonitoringalarm(pendingAlarm):
     #    return
 
     systemid = hass.data[DOMAIN].get("systemid") 
-    system_psk = hass.data[DOMAIN].get("system_psk")
     id_token = hass.data[DOMAIN].get("id_token")
 
     #TODO: Jermie: replace hardcoded sensor
@@ -194,7 +191,7 @@ async def async_createmonitoringalarm(pendingAlarm):
         id_token=id_token,
     ) as api_client:
         try:
-            result = await api_client.create_monitoring_alarm(system_psk, alarm_data)
+            result = await api_client.create_monitoring_alarm(alarm_data)
             _LOGGER.debug("API response content: %s", result)
 
             hass.data[DOMAIN]["alarm_id"] = result["AlarmID"]
@@ -225,7 +222,6 @@ async def async_createmedicalalertalarm(pendingAlarm):
     #    return
 
     systemid = hass.data[DOMAIN].get("systemid") 
-    system_psk = hass.data[DOMAIN].get("system_psk")
 
     alarm_data = {
         "sensor_device_class": "medical",
@@ -241,7 +237,7 @@ async def async_createmedicalalertalarm(pendingAlarm):
         id_token=id_token,
     ) as api_client:
         try:
-            result = await api_client.create_medical_alarm(system_psk, alarm_data)
+            result = await api_client.create_medical_alarm(alarm_data)
             _LOGGER.debug("API response content: %s", result)
 
             hass.data[DOMAIN]["alarm_id"] = result["AlarmID"]
@@ -281,7 +277,6 @@ async def async_cancelalarm(hass: HomeAssistant):
             _LOGGER.debug("alarm id =" + alarmid)
 
             systemid = hass.data[DOMAIN].get("systemid")
-            system_psk = hass.data[DOMAIN].get("system_psk")
             id_token = hass.data[DOMAIN].get("id_token")
 
             _LOGGER.info("Calling cancel alarm API")
@@ -291,7 +286,7 @@ async def async_cancelalarm(hass: HomeAssistant):
                 id_token=id_token,
             ) as api_client:
                 try:
-                    result = await api_client.cancel_alarm(system_psk, alarmid)
+                    result = await api_client.cancel_alarm(alarmid)
                     _LOGGER.debug("API response content: %s", result)
 
                     # {"status":"CANCELED","created_at":"2024-09-21T15:13:24.895Z"}
@@ -323,7 +318,6 @@ async def async_getalarmstatus(hass: HomeAssistant):
             return None
 
         systemid = hass.data[DOMAIN]["systemid"]
-        system_psk = hass.data[DOMAIN]["system_psk"]
         id_token = hass.data[DOMAIN].get("id_token")
 
         _LOGGER.info("Calling get alarm status API")
@@ -333,7 +327,7 @@ async def async_getalarmstatus(hass: HomeAssistant):
             id_token=id_token,
         ) as api_client:
             try:
-                result = await api_client.get_alarm_status(system_psk, alarmid)
+                result = await api_client.get_alarm_status(alarmid)
                 _LOGGER.debug("API response content: %s", result)
 
                 alarmstatus = result["status"]
