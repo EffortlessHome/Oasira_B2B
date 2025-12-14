@@ -268,7 +268,6 @@ class ExtendedProfile extends HTMLElement {
         method: "GET",
         headers: {
           "eh_system_id": systemId,
-          "eh_customer_id": customerId,
           "Accept": "*/*",
         },
       });
