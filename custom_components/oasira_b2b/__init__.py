@@ -301,11 +301,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "tts",
             "text",
             "ai_task"
+            ,"button"
         ],
     )
 
     agent = ConversationAgent(hass)
     conversation.async_set_agent(hass, entry, agent)
+
+    # Unregister if already registered
+    webhook.async_unregister(hass, "oasira_location_update")
+    webhook.async_unregister(hass, "oasira_push_token")
+    webhook.async_unregister(hass, "oasira_broadcast")
+    webhook.async_unregister(hass, "oasira_track_device_update")
+    webhook.async_unregister(hass, "oasira_health_data")
 
     security_webhook = SecurityAlarmWebhook(hass)
     await SecurityAlarmWebhook.async_setup_webhook(security_webhook)
@@ -368,7 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await grouper.create_sensor_groups()
     await grouper.create_security_sensor_group()
 
-    await deploy_latest_config(hass)
+    # Removed deploy_latest_config(hass) from initialization. Now triggered by button entity.
     label_registry = lr.async_get(hass)
 
     for desired in LABELS:
@@ -518,6 +526,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             "tts",
             "text",
             "ai_task",
+            "button",
         ],        
     )
 
@@ -525,6 +534,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     webhook.async_unregister(hass, "oasira_push_token")
     webhook.async_unregister(hass, "oasira_broadcast")
     webhook.async_unregister(hass, "oasira_track_device_update")
+    webhook.async_unregister(hass, "oasira_health_data")
 
     return True
 

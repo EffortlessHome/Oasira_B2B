@@ -81,10 +81,14 @@ class AutoEntity(Entity, Generic[_TEntity, _TDeviceClass]):
         """Return device class."""
         return cast(_TDeviceClass, self._device_class)
 
-    @cached_property
-    def device_info(self) -> DeviceInfo:
-        """Information about this device."""
-        return self.auto_area.device_info
+    @property
+    def device_info(self):
+        """Return information about the device."""
+        return {
+            "identifiers": {(DOMAIN, NAME)},
+            "name": NAME,
+            "manufacturer": NAME,
+        }
 
     @cached_property
     def suggested_display_precision(self) -> int | None:
