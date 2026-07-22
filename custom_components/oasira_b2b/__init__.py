@@ -92,7 +92,6 @@ from .BroadcastWebhook import BroadcastWebhook, async_remove
 
 from .virtualpowersensor import VirtualPowerSensor
 
-from .influx import process_trend_data
 from .binary_sensor import updateEntity
 from .text import AIHomeStatusTextEntity
 from .ai_conversation import ConversationAgent
@@ -176,10 +175,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "systemid": system_id,
                 "customerid": customer_id,
                 "id_token": id_token,
-                "influx_url": parsed_data["influx_url"],
-                "influx_token": parsed_data["influx_token"],
-                "influx_bucket": parsed_data["influx_bucket"],
-                "influx_org": parsed_data["influx_org"],
                 "DaysHistoryToKeep": parsed_data["DaysHistoryToKeep"],
                 "LowTemperatureWarning": parsed_data["LowTemperatureWarning"],
                 "HighTemperatureWarning": parsed_data["HighTemperatureWarning"],
@@ -609,12 +604,6 @@ def register_services(hass) -> None:
     hass.services.async_register(DOMAIN, "create_alert_service", createalert)
 
     @callback
-    async def processtrenddata(call: ServiceCall) -> None:
-        await process_trend_data(call)
-
-    hass.services.async_register(DOMAIN, "processtrenddata", process_trend_data)
-
-    @callback
     async def deploylatestconfig(call: ServiceCall) -> None:
         await handle_deploy_latest_config(call)
 
@@ -783,27 +772,51 @@ async def confirmpendingalarm(calldata):
     return await async_confirmpendingalarm(hass)
 
 
-async def cleanmotionfiles(calldata):
-    """Execute the shell command to delete old snapshots."""
+def _clean_motion_files_sync(hass, age):
+    """Synchronous helper to delete old snapshots."""
+    import time
+    snapshots_dir = "/media/snapshots"
+    if not os.path.exists(snapshots_dir):
+        _LOGGER.debug(f"Snapshots directory {snapshots_dir} does not exist")
+        return
 
-    age = "30"
+    now = time.time()
+    seconds_old = int(age) * 86400
+    count = 0
 
     try:
-        age = calldata.data["age"]
-    except:
-        _LOGGER.error("Invalid Args To Clean Motion Service. Using Default 30 days")
+        # Recursively walk through snapshots directory
+        for root, dirs, files in os.walk(snapshots_dir):
+            for name in files:
+                file_path = os.path.join(root, name)
+                try:
+                    file_mtime = os.path.getmtime(file_path)
+                    if now - file_mtime > seconds_old:
+                        os.remove(file_path)
+                        count += 1
+                except Exception as e:
+                    _LOGGER.error(f"Error deleting file {file_path}: {e}")
+        
+        if count > 0:
+            _LOGGER.info(f"Successfully deleted {count} old snapshots.")
+        else:
+            _LOGGER.debug("No old snapshots found to delete.")
+    except Exception as e:
+        _LOGGER.error(f"Error while cleaning snapshots: {e}")
 
-    command = "find /media/snapshots/* -mtime +" + str(age) + " -exec rm {} \\;"
 
-    # Use subprocess to execute the shell command
-    process = subprocess.run(
-        command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
-    )
+async def cleanmotionfiles(calldata):
+    """Execute the command to delete old snapshots off the event loop."""
+    hass = HASSComponent.get_hass()
+    age = calldata.data.get("age", 30)
 
-    if process.returncode == 0:
-        _LOGGER.info("Successfully deleted old snapshots.")
-    else:
-        _LOGGER.error(f"Error deleting snapshots: {process.stderr.decode()}")
+    try:
+        age_int = int(age)
+    except (ValueError, TypeError):
+        _LOGGER.error(f"Invalid age value {age}, using default 30 days")
+        age_int = 30
+
+    await hass.async_add_executor_job(_clean_motion_files_sync, hass, age_int)
 
 
 async def handle_remove_person_devices_service(calldata):
