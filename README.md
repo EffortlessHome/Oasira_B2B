@@ -1,7 +1,7 @@
 # Oasira Business
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/Oasira/Oasira)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/EffortlessHome/Oasira_B2B)
 
 Oasira Business is a Home Assistant integration focused on security orchestration, area-aware automation, timeline events, and built-in AI workflows.
 
