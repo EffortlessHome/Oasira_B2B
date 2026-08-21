@@ -40,24 +40,10 @@
       "reauth_successful": "Re-authentication successful"
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Oasira Options",
-        "data": {
-          "debug_mode": "Enable debug logging"
-        }
-      }
-    }
-  },
   "services": {
     "clean_motion_files": {
       "name": "Clean motion files",
       "description": "Clean motion files older than specified number of days"
-    },
-    "get_firebase_config": {
-      "name": "Get Firebase config",
-      "description": "Get Firebase configuration from Oasira for mobile app setup"
     },
     "add_label_to_entity": {
       "name": "Add label to entity",
