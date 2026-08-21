@@ -45,8 +45,7 @@
       "init": {
         "title": "Oasira Options",
         "data": {
-          "debug_mode": "Enable debug logging",
-          "base_url": "OpenAI-compatible agent base URL"
+          "debug_mode": "Enable debug logging"
         }
       }
     }

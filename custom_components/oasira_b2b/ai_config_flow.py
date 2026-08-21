@@ -35,7 +35,6 @@ from homeassistant.helpers.selector import (
 from .ai_const import (
     CONF_ADVANCED_OPTIONS,
     CONF_BACKUP_MODEL,
-    CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_THRESHOLD,
     CONF_CONTEXT_TRUNCATE_STRATEGY,
@@ -78,7 +77,6 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Optional(CONF_NAME, default="Oasira Agent Chat"): str,
-        vol.Optional(CONF_BASE_URL, default=DEFAULT_CONF_BASE_URL): str,
     }
 )
 
@@ -116,12 +114,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> OpenAICom
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    base_url = data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
+    base_url = DEFAULT_CONF_BASE_URL
 
     try:
         client = await get_authenticated_client(
             hass=hass,
-            base_url=base_url,
         )
         return client
     except httpx.ConnectError as err:
@@ -140,10 +137,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> OpenAICom
         ) from err
 
 
-async def get_available_models(hass: HomeAssistant, base_url: str) -> list[str]:
+async def get_available_models(hass: HomeAssistant) -> list[str]:
     """Get the models exposed by the Oasira agent."""
     try:
-        client = OpenAICompatibleClient(hass=hass, base_url=base_url, timeout=30.0)
+        client = OpenAICompatibleClient(hass=hass, timeout=30.0)
         models = await client.list_models()
         # Extract model names from the response
         model_names = []
@@ -156,7 +153,7 @@ async def get_available_models(hass: HomeAssistant, base_url: str) -> list[str]:
             elif isinstance(model, str):
                 model_names.append(model)
         
-        _LOGGER.debug("Found %d models on Oasira agent at %s", len(model_names), base_url)
+        _LOGGER.debug("Found %d models on Oasira agent", len(model_names))
         return model_names
     except Exception as err:
         _LOGGER.warning("Failed to get models from Oasira agent: %s", err)
@@ -205,11 +202,11 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             errors["base"] = "unknown"
         else:
             # Store base URL and name for next step
-            self._base_url = user_input.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
+            self._base_url = DEFAULT_CONF_BASE_URL
             self._name = user_input.get(CONF_NAME, DEFAULT_NAME)
             
             # Fetch available models
-            models = await get_available_models(self.hass, self._base_url)
+            models = await get_available_models(self.hass)
             CONFIG_FLOW_MODELS[self.flow_id] = models
             
             if models:
@@ -250,7 +247,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                 title=self._name,
                 data={
                     CONF_NAME: self._name,
-                    CONF_BASE_URL: self._base_url,
                     CONF_MODEL: selected_model,
                 },
                 subentries=[
@@ -286,7 +282,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="select_model",
             data_schema=schema,
             description_placeholders={
-                "base_url": self._base_url,
                 "model_count": str(len(models)),
             }
         )
@@ -309,7 +304,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             title=self._name,
             data={
                 CONF_NAME: self._name,
-                CONF_BASE_URL: self._base_url,
                 CONF_MODEL: selected_model,
             },
             subentries=[
@@ -353,32 +347,22 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reconfigure_failed")
 
         if user_input is None:
-            # Show initial options form with current base URL
-            current_base_url = config_entry.data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
-            
-            schema = vol.Schema({
-                vol.Optional(CONF_BASE_URL, default=current_base_url): str,
-            })
-            
+            # The Oasira agent URL is fixed by the integration.
+            schema = vol.Schema({})
+
             return self.async_show_form(
                 step_id="options",
                 data_schema=schema,
-                description_placeholders={
-                    "current_base_url": current_base_url,
-                },
             )
 
-        # Validate new base URL
-        new_base_url = user_input.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
         errors = {}
 
         try:
-            await validate_input(self.hass, {CONF_BASE_URL: new_base_url})
+            await validate_input(self.hass, {})
         except HomeAssistantError as err:
             errors["base"] = str(err)
             
             schema = vol.Schema({
-                vol.Optional(CONF_BASE_URL, default=new_base_url): str,
             })
             
             return self.async_show_form(
@@ -392,7 +376,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if errors:
             schema = vol.Schema({
-                vol.Optional(CONF_BASE_URL, default=new_base_url): str,
             })
             
             return self.async_show_form(
@@ -401,9 +384,9 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        # Store new base URL and fetch available models
-        self._base_url = new_base_url
-        models = await get_available_models(self.hass, self._base_url)
+        # Fetch available models from the fixed agent URL.
+        self._base_url = DEFAULT_CONF_BASE_URL
+        models = await get_available_models(self.hass)
         CONFIG_FLOW_MODELS[self.flow_id] = models
 
         if models:
@@ -438,7 +421,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                 config_entry,
                 data={
                     **config_entry.data,
-                    CONF_BASE_URL: self._base_url,
                     CONF_MODEL: selected_model,
                 }
             )
@@ -464,7 +446,6 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="options_model",
             data_schema=schema,
             description_placeholders={
-                "base_url": self._base_url,
                 "model_count": str(len(models)),
             }
         )
@@ -517,8 +498,7 @@ class ExtendedOpenAISubentryFlowHandler(ConfigSubentryFlow):
 
         # Load available models from the configured agent base URL
         if not self._available_models:
-            base_url = self._get_entry().data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
-            self._available_models = await get_available_models(self.hass, base_url)
+            self._available_models = await get_available_models(self.hass)
 
         if user_input is not None:
             # Check if advanced options is enabled
@@ -711,8 +691,7 @@ class ExtendedOpenAIAITaskSubentryFlowHandler(ConfigSubentryFlow):
 
         # Load available models from the configured agent base URL
         if not self._available_models:
-            base_url = self._get_entry().data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
-            self._available_models = await get_available_models(self.hass, base_url)
+            self._available_models = await get_available_models(self.hass)
 
         if user_input is not None:
             # Check if advanced options is enabled

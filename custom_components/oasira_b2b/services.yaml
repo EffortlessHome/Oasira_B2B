@@ -314,11 +314,6 @@ change_config:
   name: Change config
   description: Change the configuration of an existing Oasira AI Conversation integration
   fields:
-    base_url:
-      example: "https://agent.example.com"
-      description: "OpenAI-compatible Oasira agent URL"
-      selector:
-        text:
     model:
       example: "@cf/meta/llama-3.2-3b-instruct"
       description: "Model to use"

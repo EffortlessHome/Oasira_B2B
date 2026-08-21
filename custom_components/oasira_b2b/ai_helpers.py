@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -13,9 +14,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.template import Template
+from homeassistant.exceptions import HomeAssistantError
 
 from .ai_const import (
-    CONF_BASE_URL,
     DEFAULT_CONF_BASE_URL,
     DEFAULT_MODEL,
     get_model_config,
@@ -94,18 +95,30 @@ class OpenAICompatibleClient:
     def __init__(
         self,
         hass: HomeAssistant,
-        base_url: str = DEFAULT_CONF_BASE_URL,
         timeout: float = 120.0,
     ) -> None:
         """Initialize the OpenAI-compatible client."""
         self.hass = hass
-        self.base_url = base_url.rstrip("/")
+        self.base_url = DEFAULT_CONF_BASE_URL
         self.timeout = timeout
 
     def _api_url(self, path: str) -> str:
         """Build a URL below the OpenAI-compatible API root."""
         api_root = self.base_url if self.base_url.endswith("/v1") else f"{self.base_url}/v1"
         return f"{api_root}/{path.lstrip('/')}"
+
+    def _systemid(self) -> str:
+        """Return the configured system identifier for API requests."""
+        systemid = self.hass.data.get("oasira_b2b", {}).get("systemid")
+        if not isinstance(systemid, str) or not systemid:
+            raise HomeAssistantError(
+                "The Oasira systemid is required for the AI request"
+            )
+        if not re.fullmatch(r"[a-f0-9]{32}", systemid, re.IGNORECASE):
+            raise HomeAssistantError(
+                "The Oasira systemid must be a 32-character hexadecimal identifier"
+            )
+        return systemid
 
     async def list_models(self) -> list[dict[str, Any]]:
         """List models exposed by the OpenAI-compatible API."""
@@ -156,6 +169,7 @@ class OpenAICompatibleClient:
         client = get_async_client(self.hass)
 
         payload: dict[str, Any] = {
+            "systemid": self._systemid(),
             "model": model,
             "messages": messages,
             "stream": stream,
@@ -212,6 +226,7 @@ class OpenAICompatibleClient:
         client = get_async_client(self.hass)
         
         payload: dict[str, Any] = {
+            "systemid": self._systemid(),
             "model": model,
             "messages": messages,
             "stream": True,
@@ -348,14 +363,12 @@ class OpenAICompatibleClient:
 
 async def get_authenticated_client(
     hass: HomeAssistant,
-    base_url: str | None = None,
     timeout: float = 120.0,
 ) -> OpenAICompatibleClient:
     """Create and validate an Oasira agent client.
     
     Args:
         hass: Home Assistant instance
-        base_url: Oasira agent base URL
         timeout: Request timeout in seconds
         
     Returns:
@@ -365,8 +378,7 @@ async def get_authenticated_client(
         httpx.ConnectError: If cannot connect to the Oasira agent
         httpx.HTTPStatusError: If the agent returns an error
     """
-    url = base_url or DEFAULT_CONF_BASE_URL
-    client = OpenAICompatibleClient(hass=hass, base_url=url, timeout=timeout)
+    client = OpenAICompatibleClient(hass=hass, timeout=timeout)
     
     # Validate connection by listing models
     success, message = await client.check_connection()
@@ -378,7 +390,7 @@ async def get_authenticated_client(
         else:
             raise httpx.HTTPStatusError(
                 message,
-                request=httpx.Request("GET", url),
+                request=httpx.Request("GET", DEFAULT_CONF_BASE_URL),
                 response=httpx.Response(500),
             )
     

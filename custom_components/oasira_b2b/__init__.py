@@ -94,7 +94,6 @@ from .virtualpowersensor import VirtualPowerSensor
 
 from .binary_sensor import updateEntity
 from .ai_const import (
-    CONF_BASE_URL as AI_CONF_BASE_URL,
     CONF_TIMEOUT as AI_CONF_TIMEOUT,
     DEFAULT_CONF_BASE_URL as AI_DEFAULT_CONF_BASE_URL,
     DEFAULT_TIMEOUT as AI_DEFAULT_TIMEOUT,
@@ -695,10 +694,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Initialize the OpenAI-compatible client before forwarding AI platforms.
     try:
-        agent_base_url = entry.options.get(AI_CONF_BASE_URL) or entry.data.get(AI_CONF_BASE_URL) or AI_DEFAULT_CONF_BASE_URL
         ai_client = await get_ai_authenticated_client(
             hass=hass,
-            base_url=agent_base_url,
             timeout=entry.options.get(AI_CONF_TIMEOUT, AI_DEFAULT_TIMEOUT),
         )
         entry.runtime_data = ai_client
@@ -706,7 +703,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as ai_err:
         _LOGGER.error("Failed to initialize the OpenAI-compatible AI client: %s", ai_err)
         raise ConfigEntryNotReady(
-            f"Unable to connect to the Oasira agent at {agent_base_url}"
+            f"Unable to connect to the Oasira agent at {AI_DEFAULT_CONF_BASE_URL}"
         ) from ai_err
 
     await hass.config_entries.async_forward_entry_setups(

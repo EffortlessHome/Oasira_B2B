@@ -389,10 +389,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         "debug_mode",
                         default=self.config_entry.options.get("debug_mode", False),
                     ): bool,
-                    vol.Optional(
-                        "base_url",
-                        default=self.config_entry.options.get("base_url", ""),
-                    ): str,
                 }
             ),
         )

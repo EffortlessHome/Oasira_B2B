@@ -31,10 +31,8 @@ GET_NOTIFICATION_DEVICES_SCHEMA = vol.Schema({
 })
 
 from .ai_const import (
-    CONF_BASE_URL,
     CONF_MAX_TOKENS,
     CONF_MODEL,
-    DEFAULT_CONF_BASE_URL,
     DEFAULT_MODEL,
     DOMAIN,
     GITHUB_REPO_NAME,
@@ -89,7 +87,6 @@ EVALUATE_TIMELINE_ACTIVITY_SCHEMA = vol.Schema(
 
 CHANGE_CONFIG_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_BASE_URL): cv.string,
         vol.Optional(CONF_MODEL): cv.string,
     }
 )
@@ -178,7 +175,7 @@ async def async_setup_services(hass: HomeAssistant, config: ConfigType) -> None:
         entry_id = entry.entry_id
 
         updates = {}
-        for key in (CONF_BASE_URL, CONF_MODEL):
+        for key in (CONF_MODEL,):
             if key in call.data:
                 updates[key] = call.data[key]
 
