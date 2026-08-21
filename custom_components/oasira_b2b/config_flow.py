@@ -390,8 +390,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         default=self.config_entry.options.get("debug_mode", False),
                     ): bool,
                     vol.Optional(
-                        "ollama_base_url",
-                        default=self.config_entry.options.get("ollama_base_url", ":"),
+                        "base_url",
+                        default=self.config_entry.options.get("base_url", ""),
                     ): str,
                 }
             ),

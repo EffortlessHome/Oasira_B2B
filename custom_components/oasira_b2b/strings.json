@@ -46,7 +46,7 @@
         "title": "Oasira Options",
         "data": {
           "debug_mode": "Enable debug logging",
-          "ollama_base_url": "Ollama Base URL"
+          "base_url": "OpenAI-compatible agent base URL"
         }
       }
     }

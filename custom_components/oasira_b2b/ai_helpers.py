@@ -88,8 +88,8 @@ def _convert_to_template(
             _convert_to_template(setting, template_keys, hass, parents)
 
 
-class OllamaClient:
-    """Ollama API client for interacting with local Ollama instances."""
+class OpenAICompatibleClient:
+    """Client for the OpenAI-compatible Oasira agent API."""
 
     def __init__(
         self,
@@ -97,29 +97,24 @@ class OllamaClient:
         base_url: str = DEFAULT_CONF_BASE_URL,
         timeout: float = 120.0,
     ) -> None:
-        """Initialize the Ollama client."""
+        """Initialize the OpenAI-compatible client."""
         self.hass = hass
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._use_compat_api = False  # Will be set based on API version detection
+
+    def _api_url(self, path: str) -> str:
+        """Build a URL below the OpenAI-compatible API root."""
+        api_root = self.base_url if self.base_url.endswith("/v1") else f"{self.base_url}/v1"
+        return f"{api_root}/{path.lstrip('/')}"
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """List available models from Ollama."""
+        """List models exposed by the OpenAI-compatible API."""
         # Use Home Assistant's async client to avoid SSL certificate issues
         client = get_async_client(self.hass)
-        
-        # Try new endpoint first, fall back to legacy
-        try:
-            response = await client.get(f"{self.base_url}/api/tags")
-            response.raise_for_status()
-            data = response.json()
-            return data.get("models", [])
-        except httpx.HTTPStatusError:
-            # Fall back to OpenAI-compatible models endpoint
-            response = await client.get(f"{self.base_url}/v1/models")
-            response.raise_for_status()
-            data = response.json()
-            return [{"name": m["id"]} for m in data.get("data", [])]
+        response = await client.get(self._api_url("models"), timeout=httpx.Timeout(self.timeout))
+        response.raise_for_status()
+        data = response.json()
+        return [{"name": model["id"]} for model in data.get("data", [])]
 
     async def chat(
         self,
@@ -129,63 +124,25 @@ class OllamaClient:
         timeout: float | None = None,
         **kwargs: Any,
     ) -> dict[str, Any] | dict:
-        """Send a chat request to Ollama.
+        """Send a chat request to the OpenAI-compatible API.
         
         Args:
             model: The model name to use
             messages: List of message dictionaries with 'role' and 'content'
             stream: Whether to stream the response
             timeout: Request timeout in seconds (defaults to client timeout)
-            **kwargs: Additional Ollama parameters (temperature, top_p, etc.)
+            **kwargs: Additional OpenAI parameters (temperature, top_p, etc.)
             
         Returns:
             Chat response dictionary
         """
-        # Prefer endpoint discovered by check_connection, and only fall back
-        # between APIs when the endpoint itself is missing.
-        if self._use_compat_api:
-            try:
-                return await self._chat_openai_compat(
-                    model=model,
-                    messages=messages,
-                    stream=stream,
-                    timeout=timeout,
-                    **kwargs,
-                )
-            except httpx.HTTPStatusError as err:
-                if not self._is_missing_endpoint_error(err):
-                    raise
-                return await self._chat_legacy(
-                    model=model,
-                    messages=messages,
-                    stream=stream,
-                    timeout=timeout,
-                    **kwargs,
-                )
-
-        try:
-            return await self._chat_legacy(
-                model=model,
-                messages=messages,
-                stream=stream,
-                timeout=timeout,
-                **kwargs,
-            )
-        except httpx.HTTPStatusError as err:
-            if not self._is_missing_endpoint_error(err):
-                raise
-            return await self._chat_openai_compat(
-                model=model,
-                messages=messages,
-                stream=stream,
-                timeout=timeout,
-                **kwargs,
-            )
-
-    @staticmethod
-    def _is_missing_endpoint_error(err: httpx.HTTPStatusError) -> bool:
-        """Return True when server reports endpoint not available."""
-        return err.response is not None and err.response.status_code in (404, 405)
+        return await self._chat_openai_compat(
+            model=model,
+            messages=messages,
+            stream=stream,
+            timeout=timeout,
+            **kwargs,
+        )
 
     async def _chat_openai_compat(
         self,
@@ -210,53 +167,21 @@ class OllamaClient:
             payload["top_p"] = kwargs["top_p"]
         if "max_tokens" in kwargs and kwargs["max_tokens"] is not None:
             payload["max_tokens"] = kwargs["max_tokens"]
-        if "num_ctx" in kwargs and kwargs["num_ctx"] is not None:
-            payload["num_ctx"] = kwargs["num_ctx"]
         if "stop" in kwargs and kwargs["stop"] is not None:
             payload["stop"] = kwargs["stop"]
+        if "tools" in kwargs and kwargs["tools"] is not None:
+            payload["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs and kwargs["tool_choice"] is not None:
+            payload["tool_choice"] = kwargs["tool_choice"]
 
         request_timeout = timeout if timeout is not None else self.timeout
         response = await client.post(
-            f"{self.base_url}/v1/chat/completions",
+            self._api_url("chat/completions"),
             json=payload,
             timeout=httpx.Timeout(request_timeout),
         )
         response.raise_for_status()
-        return self._convert_to_ollama_format(response.json())
-
-    async def _chat_legacy(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        stream: bool,
-        timeout: float | None,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Send chat request using legacy Ollama endpoint."""
-        client = get_async_client(self.hass)
-
-        payload: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "stream": stream,
-        }
-
-        ollama_options = {}
-        for key, value in kwargs.items():
-            if value is not None and value != 0:
-                ollama_options[key] = value
-
-        if ollama_options:
-            payload["options"] = ollama_options
-
-        request_timeout = timeout if timeout is not None else self.timeout
-        response = await client.post(
-            f"{self.base_url}/api/chat",
-            json=payload,
-            timeout=httpx.Timeout(request_timeout),
-        )
-        response.raise_for_status()
-        return response.json()
+        return self._convert_to_message_response(response.json())
 
     async def chat_stream(
         self,
@@ -264,32 +189,17 @@ class OllamaClient:
         messages: list[dict[str, Any]],
         **kwargs: Any,
     ) -> httpx.Response:
-        """Send a streaming chat request to Ollama.
+        """Send a streaming chat request to the OpenAI-compatible API.
         
         Args:
             model: The model name to use
             messages: List of message dictionaries with 'role' and 'content'
-            **kwargs: Additional Ollama parameters
+            **kwargs: Additional OpenAI parameters
             
         Returns:
             HTTP response with streaming data
         """
-        # Prefer endpoint discovered by check_connection, and only fall back
-        # when endpoint is missing.
-        if self._use_compat_api:
-            try:
-                return await self._chat_stream_openai_compat(model, messages, **kwargs)
-            except httpx.HTTPStatusError as err:
-                if not self._is_missing_endpoint_error(err):
-                    raise
-                return await self._chat_stream_legacy(model, messages, **kwargs)
-
-        try:
-            return await self._chat_stream_legacy(model, messages, **kwargs)
-        except httpx.HTTPStatusError as err:
-            if not self._is_missing_endpoint_error(err):
-                raise
-            return await self._chat_stream_openai_compat(model, messages, **kwargs)
+        return await self._chat_stream_openai_compat(model, messages, **kwargs)
 
     async def _chat_stream_openai_compat(
         self,
@@ -314,46 +224,15 @@ class OllamaClient:
             payload["top_p"] = kwargs["top_p"]
         if "max_tokens" in kwargs and kwargs["max_tokens"] is not None:
             payload["max_tokens"] = kwargs["max_tokens"]
-        if "num_ctx" in kwargs and kwargs["num_ctx"] is not None:
-            payload["num_ctx"] = kwargs["num_ctx"]
         if "stop" in kwargs and kwargs["stop"] is not None:
             payload["stop"] = kwargs["stop"]
+        if "tools" in kwargs and kwargs["tools"] is not None:
+            payload["tools"] = kwargs["tools"]
+        if "tool_choice" in kwargs and kwargs["tool_choice"] is not None:
+            payload["tool_choice"] = kwargs["tool_choice"]
         
         response = await client.post(
-            f"{self.base_url}/v1/chat/completions",
-            json=payload,
-            timeout=httpx.Timeout(self.timeout),
-        )
-        response.raise_for_status()
-        return response
-
-    async def _chat_stream_legacy(
-        self,
-        model: str,
-        messages: list[dict[str, Any]],
-        **kwargs: Any,
-    ) -> httpx.Response:
-        """Send streaming chat request using legacy Ollama API."""
-        # Use Home Assistant's async client to avoid SSL certificate issues
-        client = get_async_client(self.hass)
-        
-        payload: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "stream": True,
-        }
-        
-        # Add Ollama-specific options
-        ollama_options = {}
-        for key, value in kwargs.items():
-            if value is not None and value != 0:
-                ollama_options[key] = value
-        
-        if ollama_options:
-            payload["options"] = ollama_options
-        
-        response = await client.post(
-            f"{self.base_url}/api/chat",
+            self._api_url("chat/completions"),
             json=payload,
             timeout=httpx.Timeout(self.timeout),
         )
@@ -367,42 +246,23 @@ class OllamaClient:
         stream: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Send a generate request to Ollama (non-chat completion).
+        """Generate text through the chat completion endpoint.
         
         Args:
             model: The model name to use
             prompt: The prompt text
             stream: Whether to stream the response
-            **kwargs: Additional Ollama parameters
+            **kwargs: Additional OpenAI parameters
             
         Returns:
             Generation response dictionary
         """
-        # Use Home Assistant's async client to avoid SSL certificate issues
-        client = get_async_client(self.hass)
-        
-        payload: dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "stream": stream,
-        }
-        
-        # Add Ollama-specific options
-        ollama_options = {}
-        for key, value in kwargs.items():
-            if value is not None and value != 0:
-                ollama_options[key] = value
-        
-        if ollama_options:
-            payload["options"] = ollama_options
-        
-        response = await client.post(
-            f"{self.base_url}/api/generate",
-            json=payload,
-            timeout=httpx.Timeout(self.timeout),
+        return await self.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=stream,
+            **kwargs,
         )
-        response.raise_for_status()
-        return response.json()
 
     async def generate_stream(
         self,
@@ -410,44 +270,24 @@ class OllamaClient:
         prompt: str,
         **kwargs: Any,
     ) -> httpx.Response:
-        """Send a streaming generate request to Ollama.
+        """Stream generated text through the chat completion endpoint.
         
         Args:
             model: The model name to use
             prompt: The prompt text
-            **kwargs: Additional Ollama parameters
+            **kwargs: Additional OpenAI parameters
             
         Returns:
             HTTP response with streaming data
         """
-        # Use Home Assistant's async client to avoid SSL certificate issues
-        client = get_async_client(self.hass)
-        
-        payload: dict[str, Any] = {
-            "model": model,
-            "prompt": prompt,
-            "stream": True,
-        }
-        
-        # Add Ollama-specific options
-        ollama_options = {}
-        for key, value in kwargs.items():
-            if value is not None and value != 0:
-                ollama_options[key] = value
-        
-        if ollama_options:
-            payload["options"] = ollama_options
-        
-        response = await client.post(
-            f"{self.base_url}/api/generate",
-            json=payload,
-            timeout=httpx.Timeout(self.timeout),
+        return await self._chat_stream_openai_compat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            **kwargs,
         )
-        response.raise_for_status()
-        return response
 
-    def _convert_to_ollama_format(self, openai_response: dict[str, Any]) -> dict[str, Any]:
-        """Convert OpenAI API response format to Ollama format for compatibility."""
+    def _convert_to_message_response(self, openai_response: dict[str, Any]) -> dict[str, Any]:
+        """Adapt an OpenAI response for existing integration call sites."""
         try:
             # Extract from OpenAI format
             choices = openai_response.get("choices", [])
@@ -458,7 +298,6 @@ class OllamaClient:
             message = choice.get("message", {})
             content = message.get("content", "")
             
-            # Convert back to Ollama format
             return {
                 "message": {
                     "role": message.get("role", "assistant"),
@@ -470,7 +309,7 @@ class OllamaClient:
             return {"message": {"content": str(openai_response)}}
 
     async def check_connection(self) -> tuple[bool, str]:
-        """Check if Ollama is accessible.
+        """Check if the OpenAI-compatible API is accessible.
         
         Returns:
             Tuple of (success, message)
@@ -479,50 +318,55 @@ class OllamaClient:
             # Use Home Assistant's async client to avoid SSL certificate issues
             client = get_async_client(self.hass)
             
-            # Try OpenAI-compatible endpoint first
-            try:
-                response = await client.get(f"{self.base_url}/v1/models")
-                if response.status_code == 200:
-                    self._use_compat_api = True
-                    return True, "Connected to Ollama (OpenAI-compatible API)"
-            except httpx.HTTPStatusError:
-                pass
-            
-            # Fall back to legacy endpoint
-            response = await client.get(f"{self.base_url}/api/tags")
+            response = await client.get(
+                self._api_url("models"), timeout=httpx.Timeout(self.timeout)
+            )
             if response.status_code == 200:
-                self._use_compat_api = False
-                return True, "Connected to Ollama (Legacy API)"
-            return False, f"Unexpected status code: {response.status_code}"
+                return True, "Connected to Oasira agent"
+
+            # Older agent deployments may not expose model discovery. The
+            # health endpoint still proves that the configured service is reachable.
+            if response.status_code == 404:
+                health_response = await client.get(
+                    f"{self.base_url[:-3].rstrip('/') if self.base_url.endswith('/v1') else self.base_url}/health",
+                    timeout=httpx.Timeout(self.timeout),
+                )
+                if health_response.status_code == 200:
+                    return True, "Connected to Oasira agent (model discovery unavailable)"
+
+            return False, (
+                f"Unexpected status code {response.status_code} from "
+                f"{self._api_url('models')}"
+            )
         except httpx.ConnectError:
-            return False, f"Could not connect to Ollama at {self.base_url}"
+            return False, f"Could not connect to Oasira agent at {self.base_url}"
         except httpx.TimeoutException:
-            return False, "Connection to Ollama timed out"
+            return False, "Connection to Oasira agent timed out"
         except Exception as e:
-            return False, f"Error connecting to Ollama: {str(e)}"
+            return False, f"Error connecting to Oasira agent: {str(e)}"
 
 
 async def get_authenticated_client(
     hass: HomeAssistant,
     base_url: str | None = None,
     timeout: float = 120.0,
-) -> OllamaClient:
-    """Create and validate an Ollama client.
+) -> OpenAICompatibleClient:
+    """Create and validate an Oasira agent client.
     
     Args:
         hass: Home Assistant instance
-        base_url: Ollama base URL 
+        base_url: Oasira agent base URL
         timeout: Request timeout in seconds
         
     Returns:
-        OllamaClient instance
+        OpenAICompatibleClient instance
         
     Raises:
-        httpx.ConnectError: If cannot connect to Ollama
-        httpx.HTTPStatusError: If Ollama returns an error
+        httpx.ConnectError: If cannot connect to the Oasira agent
+        httpx.HTTPStatusError: If the agent returns an error
     """
     url = base_url or DEFAULT_CONF_BASE_URL
-    client = OllamaClient(hass=hass, base_url=url, timeout=timeout)
+    client = OpenAICompatibleClient(hass=hass, base_url=url, timeout=timeout)
     
     # Validate connection by listing models
     success, message = await client.check_connection()
@@ -539,3 +383,5 @@ async def get_authenticated_client(
             )
     
     return client
+
+

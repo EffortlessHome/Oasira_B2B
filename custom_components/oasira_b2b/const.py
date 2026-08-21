@@ -22,10 +22,24 @@ from homeassistant.components.switch.const import DOMAIN as SWITCH_DOMAIN
 
 VERSION = "1.2.6"
 NAME = "Oasira"
+DOMAIN="oasira_b2b"
 name_internal = "oasira"
-DOMAIN = "oasira_b2b"
 
-# Labels we want to ensure exist
+# API Base URLs
+SECURITY_API = "https://securityapi.effortlesshome.co/"
+CUSTOMER_API = "https://cust.effortlesshome.co/"
+
+# Firebase Authentication
+FIREBASE_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
+FIREBASE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token"
+FIREBASE_USER_INFO_URL = "https://identitytoolkit.googleapis.com/v1/accounts:lookup"
+
+GOOGLE_OAUTH_URL = "https://oauth2.googleapis.com/token"
+FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
+
+FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
+
+
 LABELS = [
     "Favorite",
     "NotForSecurityMonitoring",
@@ -37,7 +51,7 @@ CONF_USERNAME = "username"
 CONF_SYSTEMID = "systemid"
 
 CUSTOM_COMPONENTS = "custom_components"
-INTEGRATION_FOLDER = DOMAIN
+INTEGRATION_FOLDER = "oasira_b2b"
 
 PRESENCE_LOCK_SWITCH_PREFIX = ""
 PRESENCE_LOCK_SWITCH_ENTITY_PREFIX = "switch.area_presence_lock_"

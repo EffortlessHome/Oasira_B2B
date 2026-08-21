@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from .const import CUSTOMER_API, SECURITY_API, FIREBASE_AUTH_URL, FIREBASE_TOKEN_URL
+from ..const import CUSTOMER_API, SECURITY_API, FIREBASE_AUTH_URL, FIREBASE_TOKEN_URL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1367,19 +1367,55 @@ class OasiraAPIClient:
 
     # ==================== Utility Methods ====================
 
-    def update_credentials(
-        self,
-        system_id: Optional[str] = None,
-        id_token: Optional[str] = None,
-    ) -> None:
-        """Update API credentials.
-        
-        Args:
-            system_id: New system ID
-            id_token: New Firebase ID token
+
+    async def start_agent_conversation(
+        self, 
+        user_input: str, 
+        home_id: str, 
+        session_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        if system_id is not None:
-            self.system_id = system_id
-        if id_token is not None:
-            self.id_token = id_token
+        Initiate a conversation with the Oasira AI Agent.
+
+        This function simulates the AI agent interaction by calling a backend agent service.
+        For testing purposes, it returns a mock response.
+
+        Args:
+            user_input: The user's natural language query.
+            home_id: The ID of the system/home the user is referring to.
+            session_context: Contextual data for the ongoing conversation.
+
+        Returns:
+            A dictionary containing the agent's response text and metadata.
+        """
+        _LOGGER.info(f"Agent conversation started for Home ID: {home_id} with input: {user_input}")
+        
+        # --- Mock Implementation for API Integration Testing ---
+        # In a real scenario, this would call a dedicated /agent/start_conversation endpoint.
+        
+        # Simple logic to simulate tool usage based on input keywords
+        if "status" in user_input.lower() or "device" in user_input.lower():
+            return {
+                "text": "I am checking the current status of all devices. I will use the 'Get Home Status' tool.",
+                "source": "needs_tool",
+                "tool_name": "get_home_status_tool"
+            }
+        elif "lock" in user_input.lower() or "unlock" in user_input.lower():
+            return {
+                "text": "To perform that action, I need your approval. Would you like me to proceed?",
+                "source": "needs_approval",
+                "tool_name": "control_device_tool"
+            }
+        elif "preferences" in user_input.lower() or "setting" in user_input.lower():
+            return {
+                "text": "I have retrieved your current resident preferences. Here they are.",
+                "source": "needs_tool",
+                "tool_name": "get_resident_preferences_tool"
+            }
+        else:
+            # Default conversational response
+            return {
+                "text": f"Understood. I am processing your request: '{user_input}'. How else may I assist you?",
+                "source": "direct_response"
+            }
 

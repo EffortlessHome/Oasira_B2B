@@ -1,4 +1,4 @@
-"""Config flow for Ollama Conversation integration."""
+"""Config flow for the Oasira agent conversation integration."""
 
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ from .ai_const import (
     CONF_MAX_FUNCTION_CALLS_PER_CONVERSATION,
     CONF_MAX_TOKENS,
     CONF_MODEL,
-    CONF_NUM_CTX,
     CONF_PROMPT,
     CONF_SHORTEN_TOOL_CALL_ID,
     CONF_TEMPERATURE,
@@ -62,7 +61,6 @@ from .ai_const import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_NAME,
-    DEFAULT_NUM_CTX,
     DEFAULT_PROMPT,
     DEFAULT_SHORTEN_TOOL_CALL_ID,
     DEFAULT_TEMPERATURE,
@@ -73,13 +71,13 @@ from .ai_const import (
 
 # Store for available models during config flow
 CONFIG_FLOW_MODELS: dict[str, list[str]] = {}
-from .ai_helpers import OllamaClient, get_authenticated_client
+from .ai_helpers import OpenAICompatibleClient, get_authenticated_client
 
 _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_NAME, default="Ollama Chat"): str,
+        vol.Optional(CONF_NAME, default="Oasira Agent Chat"): str,
         vol.Optional(CONF_BASE_URL, default=DEFAULT_CONF_BASE_URL): str,
     }
 )
@@ -108,14 +106,13 @@ DEFAULT_OPTIONS = types.MappingProxyType(
         CONF_CONTEXT_TRUNCATE_STRATEGY: DEFAULT_CONTEXT_TRUNCATE_STRATEGY,
         CONF_SHORTEN_TOOL_CALL_ID: DEFAULT_SHORTEN_TOOL_CALL_ID,
         CONF_ADVANCED_OPTIONS: DEFAULT_ADVANCED_OPTIONS,
-        CONF_NUM_CTX: DEFAULT_NUM_CTX,
         CONF_TIMEOUT: DEFAULT_TIMEOUT,
     }
 )
 
 
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> OllamaClient:
-    """Validate the user input allows us to connect.
+async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> OpenAICompatibleClient:
+    """Validate that the user input connects to the Oasira agent.
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
@@ -129,24 +126,24 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> OllamaCli
         return client
     except httpx.ConnectError as err:
         raise HomeAssistantError(
-            f"Could not connect to Ollama at {base_url}. "
-            "Please make sure Ollama is running and accessible."
+            f"Could not connect to the Oasira agent at {base_url}. "
+            "Please make sure the agent is running and accessible."
         ) from err
     except httpx.TimeoutException as err:
         raise HomeAssistantError(
-            f"Connection to Ollama at {base_url} timed out. "
-            "Please check if Ollama is responding."
+            f"Connection to the Oasira agent at {base_url} timed out. "
+            "Please check if the agent is responding."
         ) from err
     except Exception as err:
         raise HomeAssistantError(
-            f"Error connecting to Ollama: {err}"
+            f"Error connecting to the Oasira agent: {err}"
         ) from err
 
 
 async def get_available_models(hass: HomeAssistant, base_url: str) -> list[str]:
-    """Get list of available models from Ollama."""
+    """Get the models exposed by the Oasira agent."""
     try:
-        client = OllamaClient(hass=hass, base_url=base_url, timeout=30.0)
+        client = OpenAICompatibleClient(hass=hass, base_url=base_url, timeout=30.0)
         models = await client.list_models()
         # Extract model names from the response
         model_names = []
@@ -159,10 +156,10 @@ async def get_available_models(hass: HomeAssistant, base_url: str) -> list[str]:
             elif isinstance(model, str):
                 model_names.append(model)
         
-        _LOGGER.debug("Found %d models on Ollama at %s", len(model_names), base_url)
+        _LOGGER.debug("Found %d models on Oasira agent at %s", len(model_names), base_url)
         return model_names
     except Exception as err:
-        _LOGGER.warning("Failed to get models from Ollama: %s", err)
+        _LOGGER.warning("Failed to get models from Oasira agent: %s", err)
         return []
 
 
@@ -184,7 +181,7 @@ def _build_model_selector(default_value: str, models: list[str]) -> SelectSelect
 
 
 class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Ollama Conversation."""
+    """Handle a config flow for the Oasira agent conversation."""
 
     VERSION = 3
 
@@ -220,7 +217,7 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_select_model()
             else:
                 # No models found, proceed with default
-                _LOGGER.warning("No models found on Ollama, using default model")
+                _LOGGER.warning("No models found on Oasira agent, using default model")
                 return self._create_entry_with_default_model()
 
         return self.async_show_form(
@@ -414,7 +411,7 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_options_model()
         else:
             # No models found, just update base URL
-            _LOGGER.warning("No models found on Ollama at %s", self._base_url)
+            _LOGGER.warning("No models found on the Oasira agent at %s", self._base_url)
             return self.async_abort_entry_configured()
 
     async def async_step_options_model(
@@ -485,7 +482,7 @@ class ExtendedOpenAIConversationConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ExtendedOpenAISubentryFlowHandler(ConfigSubentryFlow):
-    """Flow for managing Ollama Conversation subentries."""
+    """Flow for managing Oasira agent conversation subentries."""
 
     options: dict[str, Any]
     _temp_data: dict[str, Any] | None = None
@@ -518,7 +515,7 @@ class ExtendedOpenAISubentryFlowHandler(ConfigSubentryFlow):
         if self._get_entry().state != ConfigEntryState.LOADED:
             return self.async_abort(reason="entry_not_loaded")
 
-        # Load available models from configured Ollama base URL
+        # Load available models from the configured agent base URL
         if not self._available_models:
             base_url = self._get_entry().data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
             self._available_models = await get_available_models(self.hass, base_url)
@@ -602,14 +599,6 @@ class ExtendedOpenAISubentryFlowHandler(ConfigSubentryFlow):
             )
         ] = NumberSelector(NumberSelectorConfig(min=0, max=1, step=0.05))
 
-        # Add num_ctx option
-        schema[
-            vol.Optional(
-                CONF_NUM_CTX,
-                default=DEFAULT_NUM_CTX,
-            )
-        ] = NumberSelector(NumberSelectorConfig(min=512, max=131072, step=512))
-
         # Add shorten_tool_call_id option
         schema[
             vol.Optional(
@@ -630,7 +619,7 @@ class ExtendedOpenAISubentryFlowHandler(ConfigSubentryFlow):
         options: dict[str, Any],
         models: list[str] | None = None,
     ) -> dict:
-        """Return a schema for Ollama completion options."""
+        """Return a schema for OpenAI-compatible completion options."""
         available_models = models or []
         current_model = options.get(CONF_MODEL, DEFAULT_MODEL)
         current_backup_model = options.get(CONF_BACKUP_MODEL, DEFAULT_BACKUP_MODEL)
@@ -720,7 +709,7 @@ class ExtendedOpenAIAITaskSubentryFlowHandler(ConfigSubentryFlow):
         if self._get_entry().state != ConfigEntryState.LOADED:
             return self.async_abort(reason="entry_not_loaded")
 
-        # Load available models from configured Ollama base URL
+        # Load available models from the configured agent base URL
         if not self._available_models:
             base_url = self._get_entry().data.get(CONF_BASE_URL, DEFAULT_CONF_BASE_URL)
             self._available_models = await get_available_models(self.hass, base_url)
@@ -824,14 +813,6 @@ class ExtendedOpenAIAITaskSubentryFlowHandler(ConfigSubentryFlow):
                 default=DEFAULT_TOP_P,
             )
         ] = NumberSelector(NumberSelectorConfig(min=0, max=1, step=0.05))
-
-        # Add num_ctx option
-        schema[
-            vol.Optional(
-                CONF_NUM_CTX,
-                default=DEFAULT_NUM_CTX,
-            )
-        ] = NumberSelector(NumberSelectorConfig(min=512, max=131072, step=512))
 
         # Add shorten_tool_call_id option
         schema[

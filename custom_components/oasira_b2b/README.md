@@ -36,7 +36,7 @@ The integration combines cloud-backed Oasira system data with local Home Assista
 
 - Conversation platform integration
 - AI task platform integration
-- Runtime connection to Ollama using configurable base URL and model
+- Runtime connection to the Oasira agent using a configurable base URL and model
 - AI services:
 	- change_config
 	- analyze_image
@@ -116,7 +116,7 @@ AI services include:
 - Home Assistant with config flow support
 - Recorder integration enabled
 - Network access to Oasira cloud endpoints
-- Network access to configured Ollama endpoint for AI features
+- Network access to the configured OpenAI-compatible endpoint for AI features
 
 Python dependencies are declared in manifest.json and installed automatically by Home Assistant.
 
