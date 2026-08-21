@@ -381,7 +381,7 @@ class ExtendedOpenAIBaseLLMEntity(Entity):
                 # Handle content
                 content = delta.get("content", "")
                 if content:
-                    yield {"content": content}
+                    yield {"content": str(content)}
 
                 # Handle tool calls in delta
                 tool_calls = delta.get("tool_calls", [])
@@ -444,7 +444,7 @@ class ExtendedOpenAIBaseLLMEntity(Entity):
                 content = message.get("content", "")
                 
                 if content:
-                    yield {"content": content}
+                    yield {"content": str(content)}
 
                 # Handle tool calls
                 tool_calls = chunk.get("tool_calls") or []
