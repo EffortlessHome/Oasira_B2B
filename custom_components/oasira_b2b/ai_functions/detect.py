@@ -11,6 +11,14 @@ from homeassistant.core import HomeAssistant
 from .base import Function
 
 
+def _read_image_file(image_path: str) -> bytes:
+    """Read an image file from disk."""
+    path = Path(image_path)
+    if not path.exists():
+        raise ValueError(f"File not found: {image_path}")
+    return path.read_bytes()
+
+
 class DetectObjectsFunction(Function):
     """Function for detecting objects (people, animals, packages, vehicles) in images."""
 
@@ -211,9 +219,7 @@ Provide a clear, concise response for each category."""
             if not hass.config.is_allowed_path(image_url):
                 raise ValueError(f"Cannot access path: {image_url}")
 
-            if not Path(image_url).exists():
-                raise ValueError(f"File not found: {image_url}")
-
-            with open(image_url, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-
+            image_content = await hass.async_add_executor_job(
+                _read_image_file, image_url
+            )
+            return base64.b64encode(image_content).decode()

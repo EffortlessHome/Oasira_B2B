@@ -27,6 +27,29 @@ from .base import Function
 _LOGGER = logging.getLogger(__name__)
 
 
+def _load_automation_config(raw_config: str) -> Any:
+    """Parse a YAML automation configuration."""
+    return yaml.safe_load(raw_config)
+
+
+def _append_automation_config(
+    file_path: str, automations: list[dict[str, Any]]
+) -> str:
+    """Append automations to the YAML configuration file."""
+    with open(file_path, encoding="utf-8") as f:
+        current_automations = yaml.safe_load(f.read())
+
+    raw_config = yaml.dump(automations, allow_unicode=True, sort_keys=False)
+    with open(
+        file_path,
+        "a" if current_automations else "w",
+        encoding="utf-8",
+    ) as f:
+        f.write("\n" + raw_config)
+
+    return raw_config
+
+
 class NativeFunction(Function):
     def __init__(self) -> None:
         """Initialize native tool."""
@@ -143,7 +166,9 @@ class NativeFunction(Function):
         exposed_entities: list[dict[str, Any]],
         client: Any = None,
     ) -> str:
-        automation_config = yaml.safe_load(arguments["automation_config"])
+        automation_config = await hass.async_add_executor_job(
+            _load_automation_config, arguments["automation_config"]
+        )
         config = {"id": str(round(time.time() * 1000))}
         if isinstance(automation_config, list):
             config.update(automation_config[0])
@@ -153,19 +178,11 @@ class NativeFunction(Function):
         await automation.config._async_validate_config_item(hass, config, True, False)
 
         automations = [config]
-        with open(
+        raw_config = await hass.async_add_executor_job(
+            _append_automation_config,
             os.path.join(hass.config.config_dir, AUTOMATION_CONFIG_PATH),
-            encoding="utf-8",
-        ) as f:
-            current_automations = yaml.safe_load(f.read())
-
-        with open(
-            os.path.join(hass.config.config_dir, AUTOMATION_CONFIG_PATH),
-            "a" if current_automations else "w",
-            encoding="utf-8",
-        ) as f:
-            raw_config = yaml.dump(automations, allow_unicode=True, sort_keys=False)
-            f.write("\n" + raw_config)
+            automations,
+        )
 
         await hass.services.async_call(automation.config.DOMAIN, SERVICE_RELOAD)
         hass.bus.async_fire(
@@ -297,4 +314,3 @@ class NativeFunction(Function):
         if isinstance(state, State):
             return state.as_dict()
         return state
-

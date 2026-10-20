@@ -311,8 +311,8 @@ async def async_setup_services(hass: HomeAssistant, config: ConfigType) -> None:
                     _LOGGER.debug("Processing recommendation %d: %s", i + 1, recommendation.get("title", "No title"))
                     _LOGGER.debug("Recommendation details: %s", recommendation)
                     # Generate automation from recommendation
-                    automation = _generate_automation_from_recommendation(
-                        recommendation, i + 1
+                    automation = await hass.async_add_executor_job(
+                        _generate_automation_from_recommendation, recommendation, i + 1
                     )
                     
                     if automation:
@@ -622,6 +622,16 @@ def _write_yaml_file(file_path: Path, data: dict) -> None:
         yaml.dump(data, f, allow_unicode=True, sort_keys=False, indent=2)
 
 
+def _load_automations_file(file_path: Path) -> list[dict] | None:
+    """Load automations from disk, returning None when the file is absent."""
+    if not file_path.exists():
+        return None
+
+    import yaml
+    with open(file_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or []
+
+
 # Keep remaining helper functions for scan_home_automation_patterns
 async def _create_automations_from_recommendations(
     hass: HomeAssistant, recommendations: list[dict], automations_file: str
@@ -639,24 +649,25 @@ async def _create_automations_from_recommendations(
     _LOGGER.info("Automations file path: %s", automations_path)
     
     existing_automations = []
-    if automations_path.exists():
-        try:
-            import yaml
-            with open(automations_path, "r", encoding="utf-8") as f:
-                existing_automations = yaml.safe_load(f) or []
+    try:
+        loaded_automations = await hass.async_add_executor_job(
+            _load_automations_file, automations_path
+        )
+        if loaded_automations is not None:
+            existing_automations = loaded_automations
             _LOGGER.info("Loaded %d existing automations from %s", len(existing_automations), automations_path)
-        except Exception as e:
-            _LOGGER.warning("Failed to load existing automations from %s: %s - starting fresh", automations_path, e)
-            existing_automations = []
-    else:
-        _LOGGER.info("No existing automations file found at %s - will create new", automations_path)
+        else:
+            _LOGGER.info("No existing automations file found at %s - will create new", automations_path)
+    except Exception as e:
+        _LOGGER.warning("Failed to load existing automations from %s: %s - starting fresh", automations_path, e)
+        existing_automations = []
 
     for i, recommendation in enumerate(recommendations):
         try:
             _LOGGER.debug("Processing recommendation %d/%d: %s", i + 1, len(recommendations), recommendation.get("title", "No title"))
             
-            automation = _generate_automation_from_recommendation(
-                recommendation, i + 1
+            automation = await hass.async_add_executor_job(
+                _generate_automation_from_recommendation, recommendation, i + 1
             )
             
             if automation:
@@ -685,8 +696,6 @@ async def _create_automations_from_recommendations(
 
     if created_automations:
         try:
-            automations_path.parent.mkdir(parents=True, exist_ok=True)
-            
             await hass.async_add_executor_job(
                 _write_automations_file, automations_path, existing_automations
             )
