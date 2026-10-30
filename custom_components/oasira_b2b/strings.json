@@ -2,42 +2,37 @@
   "config": {
     "step": {
       "user": {
-        "title": "Sign in to Oasira",
-        "description": "Enter your Oasira account credentials. New users can sign up on the Oasira website.",
+        "title": "Enroll this hub with Oasira Care",
+        "description": "In Oasira Care, open Facility & Device Management and create an enrollment code for this hub. Codes are single-use and expire.",
         "data": {
-          "info": "Information",
-          "email": "Email",
-          "password": "Password"
+          "api_url": "Oasira Care API URL",
+          "enrollment_code": "Enrollment code",
+          "node_name": "Hub name"
+        },
+        "data_description": {
+          "api_url": "Base URL of the Oasira Care API, without /v1.",
+          "node_name": "Shown in Oasira Care so you can tell hubs apart."
         }
       },
-      "select_system": {
-        "title": "Select System",
-        "description": "Multiple systems found for your account. Please select which system to configure.",
+      "reauth_confirm": {
+        "title": "Re-enroll this hub",
+        "description": "This hub's access to {facility} ({node}) was revoked or lost. Enter a new enrollment code for the same facility.",
         "data": {
-          "system_id": "System"
-        }
-      },
-      "manual_entry": {
-        "title": "Manual Configuration",
-        "description": "Enter your Customer ID and System ID manually",
-        "data": {
-          "info": "Information",
-          "customer_id": "Customer ID",
-          "system_id": "System ID"
+          "enrollment_code": "Enrollment code"
         }
       }
     },
     "error": {
-      "missing_fields": "Please provide all required fields",
-      "invalid_auth": "Invalid email or password. Please check your credentials and try again.",
-      "cannot_connect": "Unable to connect to Oasira services. Please check your internet connection.",
-      "no_system_found": "No system found for this account. Please ensure your account is properly set up on the Oasira website",
-      "invalid_system": "Invalid system selection. Please try again.",
+      "invalid_url": "Enter a full URL starting with http:// or https://",
+      "invalid_code": "The enrollment code is invalid, expired or already used.",
+      "cannot_connect": "Unable to reach the Oasira Care API. Check the URL and network.",
       "unknown": "An unexpected error occurred. Please try again later."
     },
     "abort": {
-      "already_configured": "This Oasira system is already configured.",
-      "reauth_successful": "Re-authentication successful"
+      "already_configured": "This hub is already enrolled.",
+      "reauth_successful": "Hub re-enrolled successfully",
+      "wrong_facility": "That code belongs to a different facility than this hub.",
+      "legacy_entry": "This entry used the old account sign-in. Remove it and add the integration again with an enrollment code."
     }
   },
   "services": {
@@ -76,6 +71,22 @@
     "create_event": {
       "name": "Create event",
       "description": "Create an event for the active alarm"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Oasira Options",
+        "description": "Stream alerts and telemetry from this Home Assistant to the Oasira Care API. Leave both fields empty to disable.",
+        "data": {
+          "care_api_url": "Care API URL (e.g. https://api.example.com)",
+          "care_api_key": "Facility ingest key"
+        }
+      }
+    },
+    "error": {
+      "care_api_incomplete": "Enter both the Care API URL and the ingest key, or leave both empty.",
+      "invalid_url": "URL must start with http:// or https://"
     }
   }
 }

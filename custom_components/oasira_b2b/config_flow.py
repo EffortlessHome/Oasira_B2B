@@ -1,358 +1,227 @@
-"""Config flow for Oasira integration."""
+"""Config flow for Oasira integration.
+
+Each Home Assistant hub is enrolled as a node of a facility: an admin issues a
+one-time enrollment code in Oasira Care, and the hub exchanges it for its own
+revocable API key. No user account or OAuth login is involved.
+"""
 
 import logging
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .oasira import OasiraAPIClient, OasiraAPIError
-from .const import DOMAIN, NAME
+from .care_stream import CONF_CARE_API_KEY, CONF_CARE_API_URL
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_EMAIL = "email"
-CONF_PASSWORD = "password"
-CONF_SYSTEM_ID = "system_id"
-CONF_CUSTOMER_ID = "customer_id"
-CONF_FIREBASE_UID = "firebase_uid"
-CONF_ID_TOKEN = "id_token"
-CONF_REFRESH_TOKEN = "refresh_token"
+CONF_API_URL = "api_url"
+CONF_API_KEY = "api_key"
+CONF_ENROLLMENT_CODE = "enrollment_code"
+CONF_NODE_ID = "node_id"
+CONF_NODE_NAME = "node_name"
+CONF_FACILITY_ID = "facility_id"
+CONF_FACILITY_NAME = "facility_name"
+
+
+class EnrollmentError(Exception):
+    """Raised when a node cannot be enrolled; ``reason`` is a translation error key."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def is_node_entry(entry: config_entries.ConfigEntry) -> bool:
+    """Return True for entries enrolled with an API key (vs. legacy account entries)."""
+    return bool(entry.data.get(CONF_API_KEY))
+
+
+async def _async_enroll(hass, api_url: str, code: str, node_name: str) -> dict[str, Any]:
+    """Exchange an enrollment code for a node API key."""
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            f"{api_url}/ingest/enroll",
+            json={"code": code, "node_name": node_name},
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as response:
+            if response.status in (400, 401, 404):
+                raise EnrollmentError("invalid_code")
+            if response.status >= 400:
+                raise EnrollmentError("cannot_connect")
+            data = await response.json()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.warning("Could not reach Oasira Care API at %s: %s", api_url, err)
+        raise EnrollmentError("cannot_connect") from err
+
+    if not all(data.get(k) for k in ("api_key", "node_id", "facility_id")):
+        raise EnrollmentError("cannot_connect")
+    return data
+
+
+def _normalize_url(value: str) -> str | None:
+    url = (value or "").strip().rstrip("/")
+    if url.endswith("/v1"):
+        url = url[:-3]
+    return url if url.startswith(("http://", "https://")) else None
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle the Oasira integration setup with Firebase OAuth."""
+    """Enroll this Home Assistant hub as a node of an Oasira Care facility."""
 
     VERSION = 2
 
-    def __init__(self):
-        """Initialize the config flow."""
-        self._firebase_uid = None
-        self._id_token = None
-        self._refresh_token = None
-        self._email = None
-        self._customer_id = None
-        self._system_id = None
-        self._available_systems = []
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Return the options flow."""
+        return OasiraOptionsFlow()
+
+    @staticmethod
+    def async_supports_options_flow(config_entry: config_entries.ConfigEntry) -> bool:
+        """Node entries have nothing to configure; only legacy entries keep options."""
+        return not is_node_entry(config_entry)
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
-        """Handle the initial step - collect email and password for Firebase auth."""
-        errors = {}
+        """Collect the API URL and one-time enrollment code."""
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            email = user_input.get(CONF_EMAIL)
-            password = user_input.get(CONF_PASSWORD)
-
-            if not email or not password:
-                errors["base"] = "missing_fields"
+            api_url = _normalize_url(user_input[CONF_API_URL])
+            node_name = (user_input.get(CONF_NODE_NAME) or "").strip() or self.hass.config.location_name
+            if api_url is None:
+                errors[CONF_API_URL] = "invalid_url"
             else:
-                # Attempt Firebase authentication
                 try:
-                    auth_result = await self._authenticate_firebase(email, password)
-
-                    if auth_result:
-                        self._firebase_uid = auth_result["firebase_uid"]
-                        self._id_token = auth_result["id_token"]
-                        self._refresh_token = auth_result["refresh_token"]
-                        self._email = email
-
-                        # Fetch system list from API
-                        try:
-                            systems = await self._fetch_system_list(email)
-
-                            if not systems:
-                                _LOGGER.warning("No systems found for user %s", email)
-                                errors["base"] = "no_system_found"
-                            elif len(systems) == 1:
-                                # Single system - use it automatically
-                                system = systems[0]
-                                self._customer_id = str(system["customer_id"])
-                                self._system_id = str(system["SystemID"])
-
-                                # Check if already configured
-                                await self.async_set_unique_id(
-                                    f"{self._customer_id}_{self._system_id}"
-                                )
-                                self._abort_if_unique_id_configured()
-
-                                return self.async_create_entry(
-                                    title=f"{NAME} ({email})",
-                                    data={
-                                        CONF_EMAIL: email,
-                                        CONF_FIREBASE_UID: self._firebase_uid,
-                                        CONF_ID_TOKEN: self._id_token,
-                                        CONF_REFRESH_TOKEN: self._refresh_token,
-                                        CONF_CUSTOMER_ID: self._customer_id,
-                                        CONF_SYSTEM_ID: self._system_id,
-                                    },
-                                )
-                            else:
-                                # Multiple systems - let user choose
-                                self._available_systems = systems
-                                return await self.async_step_select_system()
-
-                        except OasiraAPIError as err:
-                            _LOGGER.error("Failed to fetch system list: %s", err)
-                            errors["base"] = "cannot_connect"
-                    else:
-                        errors["base"] = "invalid_auth"
-
-                except Exception as err:
-                    _LOGGER.exception("Unexpected error during authentication: %s", err)
-                    errors["base"] = "unknown"
-
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_EMAIL): str,
-                vol.Required(CONF_PASSWORD): str,
-            }
-        )
+                    result = await _async_enroll(
+                        self.hass, api_url, user_input[CONF_ENROLLMENT_CODE], node_name
+                    )
+                except EnrollmentError as err:
+                    errors["base"] = err.reason
+                else:
+                    await self.async_set_unique_id(result["node_id"])
+                    self._abort_if_unique_id_configured()
+                    facility = result.get("facility_name") or result["facility_id"]
+                    return self.async_create_entry(
+                        title=f"{facility} - {result.get('node_name') or node_name}",
+                        data={
+                            CONF_API_URL: api_url,
+                            CONF_API_KEY: result["api_key"],
+                            CONF_NODE_ID: result["node_id"],
+                            CONF_NODE_NAME: result.get("node_name") or node_name,
+                            CONF_FACILITY_ID: result["facility_id"],
+                            CONF_FACILITY_NAME: facility,
+                        },
+                    )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_API_URL,
+                        default=(user_input or {}).get(CONF_API_URL, ""),
+                    ): str,
+                    vol.Required(CONF_ENROLLMENT_CODE): str,
+                    vol.Optional(
+                        CONF_NODE_NAME,
+                        default=(user_input or {}).get(
+                            CONF_NODE_NAME, self.hass.config.location_name
+                        ),
+                    ): str,
+                }
+            ),
             errors=errors,
-            description_placeholders={
-                "info": "Enter your Oasira account credentials to link your system."
-            },
         )
 
-    async def async_step_select_system(
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
+        """The node key was revoked or lost; enroll again with a new code."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
         self, user_input: dict | None = None
     ) -> FlowResult:
-        """Handle system selection when user has multiple systems."""
-        errors = {}
+        entry = self._get_reauth_entry()
+        if not is_node_entry(entry):
+            return self.async_abort(reason="legacy_entry")
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            selected_system_key = user_input.get(CONF_SYSTEM_ID)
-
-            # Find the selected system
-            selected_system = None
-            for system in self._available_systems:
-                system_key = f"{system['customer_id']}_{system['SystemID']}"
-                if system_key == selected_system_key:
-                    selected_system = system
-                    break
-
-            if selected_system:
-                self._customer_id = str(selected_system["customer_id"])
-                self._system_id = str(selected_system["SystemID"])
-
-                # Check if already configured
-                await self.async_set_unique_id(f"{self._customer_id}_{self._system_id}")
-                self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=f"{NAME} ({self._email})",
+            try:
+                result = await _async_enroll(
+                    self.hass,
+                    entry.data[CONF_API_URL],
+                    user_input[CONF_ENROLLMENT_CODE],
+                    entry.data.get(CONF_NODE_NAME, ""),
+                )
+            except EnrollmentError as err:
+                errors["base"] = err.reason
+            else:
+                if result["facility_id"] != entry.data.get(CONF_FACILITY_ID):
+                    return self.async_abort(reason="wrong_facility")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    unique_id=result["node_id"],
                     data={
-                        CONF_EMAIL: self._email,
-                        CONF_FIREBASE_UID: self._firebase_uid,
-                        CONF_ID_TOKEN: self._id_token,
-                        CONF_REFRESH_TOKEN: self._refresh_token,
-                        CONF_CUSTOMER_ID: self._customer_id,
-                        CONF_SYSTEM_ID: self._system_id,
+                        **entry.data,
+                        CONF_API_KEY: result["api_key"],
+                        CONF_NODE_ID: result["node_id"],
                     },
+                    reason="reauth_successful",
                 )
-            else:
-                errors["base"] = "invalid_system"
-
-        # Build system selection options
-        system_options = {}
-        for system in self._available_systems:
-            system_key = f"{system['customer_id']}_{system['SystemID']}"
-            ha_url = system.get("ha_url", "Unknown")
-            system_options[system_key] = f"System {system['SystemID']} - {ha_url}"
-
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_SYSTEM_ID): vol.In(system_options),
-            }
-        )
 
         return self.async_show_form(
-            step_id="select_system",
-            data_schema=data_schema,
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_ENROLLMENT_CODE): str}),
             errors=errors,
             description_placeholders={
-                "info": "Multiple systems found. Please select which system to configure."
+                "facility": entry.data.get(CONF_FACILITY_NAME, ""),
+                "node": entry.data.get(CONF_NODE_NAME, ""),
             },
         )
 
-    async def async_step_manual_entry(
-        self, user_input: dict | None = None
-    ) -> FlowResult:
-        """Handle manual entry of customer_id and system_id if API lookup fails."""
+
+class OasiraOptionsFlow(config_entries.OptionsFlow):
+    """Configure streaming of alerts and telemetry to the Oasira Care API."""
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        """Collect the Care API URL and facility ingest key."""
         errors = {}
 
         if user_input is not None:
-            customer_id = user_input.get(CONF_CUSTOMER_ID)
-            system_id = user_input.get(CONF_SYSTEM_ID)
-
-            if not customer_id or not system_id:
-                errors["base"] = "missing_fields"
+            url = (user_input.get(CONF_CARE_API_URL) or "").strip().rstrip("/")
+            key = (user_input.get(CONF_CARE_API_KEY) or "").strip()
+            if bool(url) != bool(key):
+                errors["base"] = "care_api_incomplete"
+            elif url and not url.startswith(("http://", "https://")):
+                errors[CONF_CARE_API_URL] = "invalid_url"
             else:
-                # Store the manually entered IDs
-                self._customer_id = customer_id
-                self._system_id = system_id
-
-                # Check if already configured
-                await self.async_set_unique_id(f"{self._customer_id}_{self._system_id}")
-                self._abort_if_unique_id_configured()
-
                 return self.async_create_entry(
-                    title=f"{NAME} ({self._email})",
-                    data={
-                        CONF_EMAIL: self._email,
-                        CONF_FIREBASE_UID: self._firebase_uid,
-                        CONF_ID_TOKEN: self._id_token,
-                        CONF_REFRESH_TOKEN: self._refresh_token,
-                        CONF_CUSTOMER_ID: self._customer_id,
-                        CONF_SYSTEM_ID: self._system_id,
-                    },
+                    data={CONF_CARE_API_URL: url, CONF_CARE_API_KEY: key}
                 )
 
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_CUSTOMER_ID): str,
-                vol.Required(CONF_SYSTEM_ID): str,
-            }
-        )
-
+        current = self.config_entry.options
         return self.async_show_form(
-            step_id="manual_entry",
-            data_schema=data_schema,
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_CARE_API_URL,
+                        description={"suggested_value": current.get(CONF_CARE_API_URL, "")},
+                    ): str,
+                    vol.Optional(
+                        CONF_CARE_API_KEY,
+                        description={"suggested_value": current.get(CONF_CARE_API_KEY, "")},
+                    ): str,
+                }
+            ),
             errors=errors,
-            description_placeholders={
-                "info": "Enter your Customer ID and System ID to complete setup."
-            },
         )
-
-    async def _authenticate_firebase(
-        self, email: str, password: str
-    ) -> dict[str, Any] | None:
-        """Authenticate with Firebase and return user credentials.
-
-        Args:
-            email: User's email
-            password: User's password
-
-        Returns:
-            Dictionary with firebase_uid and id_token, or None if authentication fails
-        """
-        try:
-            async def _authenticate() -> dict[str, Any]:
-                async with OasiraAPIClient() as client:
-                    return await client.firebase_sign_in(email, password)
-
-            data = await _authenticate()
-
-            # Validate that we got the required tokens
-            firebase_uid = data.get("localId")
-            id_token = data.get("idToken")
-            refresh_token = data.get("refreshToken")
-
-            if not firebase_uid or not id_token:
-                _LOGGER.error(
-                    "Firebase auth response missing required fields. Response: %s",
-                    data,
-                )
-                return None
-
-            return {
-                "firebase_uid": firebase_uid,
-                "id_token": id_token,
-                "refresh_token": refresh_token,
-            }
-        except OasiraAPIError as err:
-            _LOGGER.error("Firebase auth error: %s", err)
-            return None
-        except Exception as err:
-            _LOGGER.exception("Error calling Firebase auth API: %s", err)
-            return None
-
-    async def _fetch_system_list(self, email: str) -> list[dict[str, Any]]:
-        """Fetch list of systems for the user from Oasira API.
-
-        Args:
-            email: User's email address
-
-        Returns:
-            List of system dictionaries, each containing SystemID, customer_id, ha_url, etc.
-        """
-        _LOGGER.debug("Fetching system list for email %s", email)
-
-        if not self._id_token:
-            _LOGGER.error("Cannot fetch system list: id_token is not set")
-            raise OasiraAPIError("Authentication token is missing")
-
-        try:
-            async def _fetch_systems() -> list[dict[str, Any]]:
-                async with OasiraAPIClient(id_token=self._id_token) as client:
-                    return await client.get_system_list_by_email(email)
-
-            systems = await _fetch_systems()
-            _LOGGER.info("Found %d system(s) for email %s", len(systems), email)
-            return systems
-        except OasiraAPIError as err:
-            _LOGGER.exception("Failed to fetch system list: %s", err)
-            raise
-        except Exception as err:
-            _LOGGER.exception("Unexpected error fetching system list: %s", err)
-            raise OasiraAPIError(f"Unexpected error: {err}") from err
-
-    async def async_step_reauth(self, user_input=None):
-        """Handle reauth - re-enter credentials."""
-        errors = {}
-
-        entry = None
-        if self.context.get("entry_id") and hasattr(self, "hass"):
-            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-
-        if user_input is not None:
-            email = user_input.get(CONF_EMAIL)
-            password = user_input.get(CONF_PASSWORD)
-
-            if not email or not password:
-                errors["base"] = "missing_fields"
-            else:
-                try:
-                    auth_result = await self._authenticate_firebase(email, password)
-                    if auth_result:
-                        if entry is not None:
-                            new_data = {
-                                **entry.data,
-                                CONF_EMAIL: email,
-                                CONF_FIREBASE_UID: auth_result["firebase_uid"],
-                                CONF_ID_TOKEN: auth_result["id_token"],
-                                CONF_REFRESH_TOKEN: auth_result["refresh_token"],
-                            }
-                            self.hass.config_entries.async_update_entry(
-                                entry, data=new_data
-                            )
-                        return self.async_abort(reason="reauth_successful")
-                    errors["base"] = "invalid_auth"
-                except Exception as err:
-                    _LOGGER.exception("Unexpected error during reauth: %s", err)
-                    errors["base"] = "unknown"
-
-        default_email = ""
-        if entry is not None:
-            default_email = entry.data.get(CONF_EMAIL, "")
-
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_EMAIL, default=default_email): str,
-                vol.Required(CONF_PASSWORD): str,
-            }
-        )
-
-        return self.async_show_form(
-            step_id="reauth",
-            data_schema=data_schema,
-            errors=errors,
-            description_placeholders={
-                "info": "Enter your Oasira account credentials to reauthenticate."
-            },
-        )
-

@@ -67,6 +67,7 @@ from .alarm_common import (
     async_getalarmstatus,
 )
 from .area_manager import AreaManager
+from .care_stream import CONF_CARE_API_KEY, CONF_CARE_API_URL, CareStreamer
 from .auto_area import AutoArea
 
 from .oasira import OasiraAPIClient, OasiraAPIError
@@ -543,8 +544,32 @@ class OasiraNotificationService(BaseNotificationService):
     #    return False
 
 
+async def _async_setup_node_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a hub enrolled with an API key: stream device data to Oasira Care."""
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["entry_id"] = entry.entry_id
+    hass.data[DOMAIN]["config_entry"] = entry
+
+    @callback
+    def _start_reauth() -> None:
+        entry.async_start_reauth(hass)
+
+    streamer = CareStreamer(
+        hass,
+        entry.data["api_url"],
+        entry.data["api_key"],
+        on_auth_failed=_start_reauth,
+    )
+    hass.data[DOMAIN]["care_streamer"] = streamer
+    await streamer.async_start()
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up integration from a config entry."""
+    if entry.data.get("api_key"):
+        return await _async_setup_node_entry(hass, entry)
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["entry_id"] = entry.entry_id
 
@@ -726,6 +751,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register custom notification platform
     await async_setup_notification_platform(hass)
 
+    care_api_url = entry.options.get(CONF_CARE_API_URL)
+    care_api_key = entry.options.get(CONF_CARE_API_KEY)
+    if care_api_url and care_api_key:
+        streamer = CareStreamer(hass, care_api_url, care_api_key)
+        hass.data[DOMAIN]["care_streamer"] = streamer
+        await streamer.async_start()
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     # Unregister if already registered
     webhook.async_unregister(hass, "oasira_push_token")
     webhook.async_unregister(hass, "oasira_remove_push_token")
@@ -894,10 +927,20 @@ async def deploy_latest_config(hass: HomeAssistant):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
 
+    if entry.data.get("api_key"):
+        streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
+        if streamer is not None:
+            await streamer.async_stop()
+        return True
+
     if hass.data.get(DOMAIN, {}).get("ai_runtime_client") is getattr(
         entry, "runtime_data", None
     ):
         hass.data[DOMAIN].pop("ai_runtime_client", None)
+
+    streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
+    if streamer is not None:
+        await streamer.async_stop()
 
     await hass.config_entries.async_unload_platforms(
         entry,
@@ -931,6 +974,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     webhook.async_unregister(hass, "oasira_location_update")
 
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry so Care API streaming picks up changed options."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_init(hass: HomeAssistant, entry: ConfigEntry, auto_area: AutoArea):
