@@ -23,7 +23,7 @@
       }
     },
     "error": {
-      "invalid_url": "Enter a full URL starting with http:// or https://",
+      "invalid_url": "Enter a full URL including the http or https scheme",
       "invalid_code": "The enrollment code is invalid, expired or already used.",
       "cannot_connect": "Unable to reach the Oasira Care API. Check the URL and network.",
       "unknown": "An unexpected error occurred. Please try again later."
@@ -32,7 +32,8 @@
       "already_configured": "This hub is already enrolled.",
       "reauth_successful": "Hub re-enrolled successfully",
       "wrong_facility": "That code belongs to a different facility than this hub.",
-      "legacy_entry": "This entry used the old account sign-in. Remove it and add the integration again with an enrollment code."
+      "legacy_entry": "This entry used the old account sign-in. Remove it and add the integration again with an enrollment code.",
+      "single_instance_allowed": "Only one hub can be enrolled per Home Assistant instance. Remove the existing entry first."
     }
   },
   "services": {
@@ -79,14 +80,14 @@
         "title": "Oasira Options",
         "description": "Stream alerts and telemetry from this Home Assistant to the Oasira Care API. Leave both fields empty to disable.",
         "data": {
-          "care_api_url": "Care API URL (e.g. https://api.example.com)",
+          "care_api_url": "Care API URL",
           "care_api_key": "Facility ingest key"
         }
       }
     },
     "error": {
       "care_api_incomplete": "Enter both the Care API URL and the ingest key, or leave both empty.",
-      "invalid_url": "URL must start with http:// or https://"
+      "invalid_url": "URL must include the http or https scheme"
     }
   }
 }

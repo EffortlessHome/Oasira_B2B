@@ -17,27 +17,20 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 import aiohttp
-import httpx
 
-from google.api_core.exceptions import GoogleAPIError
-from google import genai
-from google.auth import jwt
-from google.auth.crypt import rsa
 import voluptuous as vol
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components import frontend
-from homeassistant.components.alarm_control_panel import DOMAIN as PLATFORM
-from homeassistant.components.notify import BaseNotificationService
 from homeassistant.config import get_default_config_dir
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.components import webhook
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.components.persistent_notification import create as notify_create
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
@@ -56,16 +49,10 @@ import homeassistant.util.dt as dt_util
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.http.view import HomeAssistantView
 from homeassistant.components.frontend import add_extra_js_url
-from homeassistant.components import conversation
 
 ATTR_TITLE = "title"
 ATTR_DATA = "data"
 
-from .alarm_common import (
-    async_cancelalarm,
-    async_confirmpendingalarm,
-    async_getalarmstatus,
-)
 from .area_manager import AreaManager
 from .care_stream import CONF_CARE_API_KEY, CONF_CARE_API_URL, CareStreamer
 from .auto_area import AutoArea
@@ -76,9 +63,6 @@ from .auth_helper import ensure_valid_id_token, refresh_firebase_id_token, safe_
 from .const import (
     DOMAIN,
     LABELS,
-    CONF_EMAIL,
-    ATTR_LATITUDE,
-    ATTR_LONGITUDE,
     NAME,
     name_internal,
 )
@@ -87,28 +71,9 @@ from .const import (
 from .deviceclassgroupsync import async_setup_devicegroup
 from .event import EventHandler
 from .MotionSensorGrouper import MotionSensorGrouper
-from .SecurityAlarmWebhook import SecurityAlarmWebhook, async_remove
-from .BroadcastWebhook import BroadcastWebhook, async_remove
-from .siren import SirenGrouper
 
-from .virtualpowersensor import VirtualPowerSensor
 
-from .binary_sensor import updateEntity
-from .ai_const import (
-    CONF_TIMEOUT as AI_CONF_TIMEOUT,
-    DEFAULT_CONF_BASE_URL as AI_DEFAULT_CONF_BASE_URL,
-    DEFAULT_TIMEOUT as AI_DEFAULT_TIMEOUT,
-)
-from .ai_helpers import get_authenticated_client as get_ai_authenticated_client
-from .ai_services import async_setup_services as async_setup_ai_services
-from .ai_template import (
-    async_setup_templates as async_setup_ai_templates,
-    async_unload_templates as async_unload_ai_templates,
-)
 from .timeline_service import async_setup_services as async_setup_timeline_services
-from .energy_advisor import async_setup_energy_advisor
-from .person_notifications import PersonNotificationManager, send_notification_to_person
-from .mobile_app_config import setup_mobile_app_config, generate_mobile_app_config_yaml
 
 try:
     # Older versions (pre-2025)
@@ -131,13 +96,6 @@ LOCATION_SERVICE_SCHEMA = vol.Schema(
 _LOGGER = logging.getLogger(__name__)
 LEGACY_DOMAIN = "oasira"
 
-GOOGLE_OAUTH_URL = "https://oauth2.googleapis.com/token"
-FIREBASE_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
-FCM_URL = "https://fcm.googleapis.com/v1/projects/oasira-oauth/messages:send"
-PUSH_TOKEN_STORAGE_KEY = "oasira_push_tokens"
-PUSH_TOKEN_STORAGE_VERSION = 1
-VIRTUAL_POWER_STORAGE_KEY = "oasira_virtual_power_profiles"
-VIRTUAL_POWER_STORAGE_VERSION = 1
 
 
 class HASSComponent:
@@ -157,441 +115,42 @@ class HASSComponent:
         return cls.hass_instance
 
 
-class OasiraNotificationService(BaseNotificationService):
-    """Oasira notification service for all registered devices."""
-
-    def __init__(self, hass: HomeAssistant):
-        """Initialize the service."""
-        self.hass = hass
-
-    async def async_send_message(self, message: str = "", **kwargs):
-        """Send a notification message to all registered devices."""
-        title = kwargs.get(ATTR_TITLE, "Oasira")
-        data = kwargs.get(ATTR_DATA, {})
-        persistent_message = self._build_persistent_markdown(message, data)
-        notify_create(self.hass, persistent_message, title=title)
-
-        await self._send_fcm_notification(message, title, data)
-
-    def _build_persistent_markdown(self, message: str, data: dict) -> str:
-        if not data:
-            return message
-
-        lines = [message] if message else []
-
-        links = []
-        images = []
-        extra_items = []
-
-        for key, value in data.items():
-            if value is None:
-                continue
-
-            key_str = str(key)
-            value_str = (
-                json.dumps(value) if isinstance(value, (dict, list)) else str(value)
-            )
-
-            if key_str in {"url", "link"}:
-                links.append(value_str)
-                continue
-
-            if key_str in {"image", "image_url", "photo", "photo_url"}:
-                resolved = self._resolve_image_url(value_str, full_url=False)
-                if resolved:
-                    images.append(resolved)
-                continue
-
-            extra_items.append((key_str, value_str))
-
-        compact_parts = []
-        if links:
-            compact_parts.append(
-                "Links: "
-                + " | ".join(f"[Link {i + 1}]({link})" for i, link in enumerate(links))
-            )
-
-        if images:
-            # Always show images in persistent notifications
-            for i, image in enumerate(images):
-                lines.append(f"![Image {i + 1}]({image})")
-
-        if extra_items:
-            compact_parts.append(
-                "Data: "
-                + "; ".join(
-                    f"`{key_str}`={value_str}" for key_str, value_str in extra_items
-                )
-            )
-
-        if compact_parts:
-            lines.append("\n" + " | ".join(compact_parts))
-
-        return "\n".join(lines)
-
-    async def _send_fcm_notification(
-        self, message: str, title: str, data: dict
-    ) -> None:
-        tokens = self.hass.data.get(DOMAIN, {}).get("notification_tokens", [])
-        if not tokens:
-            _LOGGER.warning("No registered notification tokens")
-            return
-
-        access_token, project_id = await self._get_firebase_access_token()
-        if not access_token or not project_id:
-            _LOGGER.error("Unable to get Firebase access token")
-            return
-
-        fcm_url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
-        _LOGGER.info("[Oasira] Using FCM project: %s", project_id)
-
-        session = async_get_clientsession(self.hass)
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
-
-        image_url = None
-        payload_data = None
-        if data:
-            payload_data = {}
-            for k, v in data.items():
-                key_str = str(k)
-                value_str = str(v)
-                if key_str in {"image", "image_url", "photo", "photo_url"}:
-                    resolved = self._resolve_image_url(value_str, full_url=True)
-                    if resolved:
-                        value_str = resolved
-                        if not image_url:
-                            image_url = resolved
-                payload_data[key_str] = value_str
-
-        for token in tokens:
-            payload = {
-                "message": {
-                    "token": token,
-                    "notification": {"title": title, "body": message},
-                }
-            }
-            if payload_data:
-                payload["message"]["data"] = payload_data
-
-            if image_url:
-                # Enhanced image handling for better native notification support
-                payload["message"]["notification"]["image"] = image_url
-                payload["message"]["android"] = {
-                    "notification": {
-                        "image": image_url,
-                        "icon": "ic_stat_ic_notification",
-                        "color": "#007bff",
-                    }
-                }
-                payload["message"]["apns"] = {
-                    "payload": {
-                        "aps": {
-                            "alert": {"title": title, "body": message},
-                            "mutable-content": 1,
-                        },
-                        "image_url": image_url,
-                    }
-                }
-                # Add webpush for web notifications
-                payload["message"]["webpush"] = {
-                    "notification": {
-                        "image": image_url,
-                        "icon": "/local/effortlesshome/user.png",
-                    }
-                }
-
-            try:
-                async with session.post(fcm_url, headers=headers, json=payload) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        _LOGGER.error("FCM push failed: %s", text)
-                        # Check for UNREGISTERED token and remove it
-                        try:
-                            error_data = json.loads(text)
-                            if (
-                                error_data.get("error", {}).get("details") and
-                                any(
-                                    detail.get("errorCode") == "UNREGISTERED"
-                                    for detail in error_data["error"]["details"]
-                                    if detail.get("@type") == "type.googleapis.com/google.firebase.fcm.v1.FcmError"
-                                )
-                            ):
-                                _LOGGER.warning("Removing unregistered FCM token: %s", token[:20] + "...")
-                                domain_data = self.hass.data.get(DOMAIN, {})
-                                tokens_list = domain_data.get("notification_tokens", [])
-                                if token in tokens_list:
-                                    tokens_list.remove(token)
-                                    token_store = domain_data.get("token_store")
-                                    if token_store is not None:
-                                        await token_store.async_save(tokens_list)
-                        except json.JSONDecodeError:
-                            pass  # Not JSON, ignore
-                    else:
-                        _LOGGER.info(
-                            "FCM push successful for token: %s", token[:20] + "..."
-                        )
-            except Exception as exc:
-                _LOGGER.error("FCM push error: %s", exc)
-
-    async def _send_fcm_notification_old(
-           self, message: str, title: str, data: dict
-       ) -> None:
-           """Send a notification message to all registered devices."""
-           _LOGGER.info("--- Starting FCM push process for title: %s, message: %s ---", title, message)
-           manager = self.hass.data.get(DOMAIN, {}).get("person_notification_manager")
-           if manager is None:
-               _LOGGER.error("FCM Push Failure: PersonNotificationManager not initialized.")
-               raise HomeAssistantError("PersonNotificationManager not initialized")
-
-           _LOGGER.info("Attempting to collect tokens from PersonNotificationManager...")
-           tokens = set()
-           # Iterate through all devices managed by the PersonNotificationManager
-           for person_devices in manager._devices_by_person.values():
-               for device in person_devices:
-                   if hasattr(device, 'token') and device.token:
-                       tokens.add(device.token)
-
-           if not tokens:
-               _LOGGER.warning("FCM Push Failure: No registered notification tokens found via PersonNotificationManager. ")
-               return
-
-           tokens = list(tokens)
-           _LOGGER.info("FCM Push Success: Collected %d unique notification tokens. Starting broadcast loop.", len(tokens))
-
-           try:
-               _LOGGER.info("Fetching Firebase access token and project ID...")
-               access_token, project_id = await self._get_firebase_access_token()
-               if not access_token or not project_id:
-                   _LOGGER.error("FCM Push Failure: Unable to get Firebase access token or project ID.")
-                   return
-
-               _LOGGER.info("Successfully retrieved Firebase credentials. Using project: %s", project_id)
-               fcm_url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
-               _LOGGER.debug("Using FCM API endpoint: %s", fcm_url)
-
-               session = async_get_clientsession(self.hass)
-               headers = {
-                   "Authorization": f"Bearer {access_token}",
-                   "Content-Type": "application/json",
-               }
-
-               failed_count = 0
-               _LOGGER.info("Starting notification loop over %d tokens.", len(tokens))
-
-               for i, token in enumerate(tokens):
-                   _LOGGER.debug("--- Processing token %d/%d (Token: %s[:10]...) ---", i + 1, len(tokens), token[:10])
-                   payload = {
-                       "message": {
-                           "token": token,
-                           "notification": {"title": title, "body": message},
-                       }
-                   }
-                   if data:
-                       payload_data = {}
-                       for k, v in data.items():
-                           key_str = str(k)
-                           value_str = str(v)
-                           payload_data[key_str] = value_str
-                       payload["message"]["data"] = payload_data
-
-                   _LOGGER.debug("Sending payload to FCM for token %s...", token[:10])
-
-                   try:
-                       async with session.post(fcm_url, headers=headers, json=payload) as resp:
-                           status_code = resp.status
-                           text = await resp.text()
-
-                           if status_code != 200:
-                               _LOGGER.error("FCM Push failed for token %s. Status: %d. Response: %s", token[:10], status_code, text)
-                               failed_count += 1
-                               try:
-                                   error_data = json.loads(text)
-                                   # Check for UNREGISTERED token
-                                   if (
-                                       error_data.get("error", {}).get("details") and
-                                       any(
-                                           detail.get("errorCode") == "UNREGISTERED"
-                                           for detail in error_data["error"]["details"]
-                                           if detail.get("@type") == "type.googleapis.com/google.firebase.fcm.v1.FcmError"
-                                       )
-                                   ):
-                                       _LOGGER.warning("Token %s is UNREGISTERED. Flagging for removal.", token[:10])
-                                       # Token removal logic (if token is unregistered, remove it from stored list)
-                                       domain_data = self.hass.data.get(DOMAIN, {})
-                                       tokens_list = domain_data.get("notification_tokens", [])
-                                       if token in tokens_list:
-                                           tokens_list.remove(token)
-                                           token_store = domain_data.get("token_store")
-                                           if token_store is not None:
-                                               await token_store.async_save(tokens_list)
-                               except json.JSONDecodeError:
-                                   _LOGGER.debug("Could not parse error response from FCM.")
-                           else:
-                               _LOGGER.debug("FCM push successful for token %s.", token[:10])
-
-                   except Exception as e:
-                       _LOGGER.error("Failed to send FCM to device %s due to exception: %s", token[:10], e)
-                       failed_count += 1
-
-               _LOGGER.info("--- Notification Loop Summary ---")
-               if failed_count > 0:
-                   _LOGGER.warning("Completed FCM broadcast. %d/%d devices failed to receive the notification.", failed_count, len(tokens))
-               else:
-                   _LOGGER.info("Completed FCM broadcast. Successfully sent notification to all %d devices.", len(tokens))
-               return failed_count > 0
-           except Exception as e:
-               _LOGGER.critical("CRITICAL FCM Failure: Unexpected error during notification broadcast: %s", e, exc_info=True)
-               raise HomeAssistantError(f"Critical FCM Failure: {e}")
-
-    async def _get_firebase_access_token(self) -> tuple[str | None, str | None]:
-        try:
-            id_token = self.hass.data.get(DOMAIN, {}).get("id_token")
-            if not id_token:
-                _LOGGER.error("Missing id_token for Firebase access")
-                return None, None
-
-            async with OasiraAPIClient(id_token=id_token) as client:
-                firebase_config = await client.get_firebase_config()
-
-            google_firebase_raw = (
-                firebase_config.get("Google_Firebase") if firebase_config else None
-            )
-            if not google_firebase_raw:
-                _LOGGER.error("Missing Google_Firebase config from Oasira")
-                return None, None
-
-            service_account_info = json.loads(google_firebase_raw)
-            private_key = service_account_info["private_key"]
-            client_email = service_account_info["client_email"]
-            project_id = service_account_info.get("project_id")
-            if not project_id:
-                _LOGGER.error("Missing project_id in Firebase service account")
-                return None, None
-
-            now = int(time.time())
-            payload = {
-                "iss": client_email,
-                "scope": FIREBASE_SCOPE,
-                "aud": GOOGLE_OAUTH_URL,
-                "iat": now,
-                "exp": now + 3600,
-            }
-
-            signer = rsa.RSASigner.from_string(private_key)
-            assertion = jwt.encode(signer, payload)
-
-            session = async_get_clientsession(self.hass)
-            async with session.post(
-                GOOGLE_OAUTH_URL,
-                data={
-                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                    "assertion": assertion,
-                },
-            ) as resp:
-                result = await resp.json()
-                if "access_token" not in result:
-                    _LOGGER.error("Firebase OAuth error: %s", result)
-                    return None, None
-
-                return result["access_token"], project_id
-        except OasiraAPIError as exc:
-            _LOGGER.error("Failed to fetch Firebase config: %s", exc)
-            return None, None
-        except Exception as exc:
-            _LOGGER.exception("Failed to refresh Firebase access token: %s", exc)
-            return None, None
-
-
-    def _resolve_image_url(
-        self, image_url: str | None, full_url: bool = True
-    ) -> str | None:
-        if not image_url:
-            return None
-
-        # Add cache buster to ensure latest image is always fetched
-        cache_buster = f"v={int(time.time())}"
-
-        if image_url.startswith(("http://", "https://")):
-            separator = "&" if "?" in image_url else "?"
-            return f"{image_url}{separator}{cache_buster}"
-
-        # Handle local file paths
-        clean_path = image_url.lstrip("/")
-
-        # Handle existing query strings in local paths
-        if "?" in clean_path:
-            base_path, query = clean_path.split("?", 1)
-            encoded_path = f"{quote(base_path, safe='/')}?{query}"
-            path_with_buster = f"{encoded_path}&{cache_buster}"
-        else:
-            encoded_path = quote(clean_path, safe="/")
-            path_with_buster = f"{encoded_path}?{cache_buster}"
-
-        if full_url:
-            ha_url = self.hass.data.get(DOMAIN, {}).get("ha_url", "")
-            if ha_url:
-                # Ensure no double slashes when joining
-                return f"{ha_url.rstrip('/')}/{path_with_buster}"
-
-        # Return as absolute path for local use (e.g. persistent notifications)
-        return f"/{path_with_buster}"
-
     #except Exception as e:
     #    _LOGGER.error(f"Failed to setup notification platform: {e}", exc_info=True)
     #    return False
 
 
-async def _async_setup_node_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up a hub enrolled with an API key: stream device data to Oasira Care."""
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN]["entry_id"] = entry.entry_id
-    hass.data[DOMAIN]["config_entry"] = entry
+ACCOUNT_PLATFORMS = [
+    "switch",
+    "binary_sensor",
+    "sensor",
+    "cover",
+    "light",
+    "button",
+    "stt",
+]
+# Enrolled hubs keep every local entity; only the cloud-account voice platforms are skipped.
+NODE_PLATFORMS = [p for p in ACCOUNT_PLATFORMS if p != "stt"]
 
-    @callback
-    def _start_reauth() -> None:
-        entry.async_start_reauth(hass)
-
-    streamer = CareStreamer(
-        hass,
-        entry.data["api_url"],
-        entry.data["api_key"],
-        on_auth_failed=_start_reauth,
-    )
-    hass.data[DOMAIN]["care_streamer"] = streamer
-    await streamer.async_start()
-    return True
+NODE_ACCOUNT_DEFAULTS = {
+    "emailaddress": "",
+    "ha_token": "",
+    "ha_url": "",
+    "DaysHistoryToKeep": 30,
+    "testmode": False,
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up integration from a config entry."""
-    if entry.data.get("api_key"):
-        return await _async_setup_node_entry(hass, entry)
+    is_node = bool(entry.data.get("api_key"))
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["entry_id"] = entry.entry_id
 
-    token_store = storage.Store(
-        hass, PUSH_TOKEN_STORAGE_VERSION, PUSH_TOKEN_STORAGE_KEY
-    )
-    hass.data[DOMAIN]["token_store"] = token_store
-    stored_tokens = await token_store.async_load() or []
-    hass.data[DOMAIN]["notification_tokens"] = list(dict.fromkeys(stored_tokens))
-
-    virtual_power_store = storage.Store(
-        hass,
-        VIRTUAL_POWER_STORAGE_VERSION,
-        VIRTUAL_POWER_STORAGE_KEY,
-    )
-    virtual_power_profiles = await virtual_power_store.async_load() or []
-
-    person_notification_manager = PersonNotificationManager(hass)
-    await person_notification_manager.async_load()
-
-    system_id = entry.data["system_id"]
-    customer_id = entry.data["customer_id"]
+    # Enrolled hubs have no Oasira account; they are identified by node and facility.
+    system_id = entry.data.get("system_id") or entry.data.get("node_id")
+    customer_id = entry.data.get("customer_id") or entry.data.get("facility_id")
     id_token = entry.data.get("id_token")
 
     if not system_id:
@@ -606,105 +165,64 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         {
             "entry_id": entry.entry_id,
             "config_entry": entry,
-            "token_store": hass.data[DOMAIN].get("token_store"),
-            "notification_tokens": hass.data[DOMAIN].get("notification_tokens"),
-            "virtual_power_store": virtual_power_store,
-            "virtual_power_profiles": virtual_power_profiles,
             "id_token": id_token,
             "refresh_token": entry.data.get("refresh_token"),
         }
     )
 
-    if not await ensure_valid_id_token(hass):
-        _LOGGER.warning(
-            "Startup token validation failed; refresh or reauth may be required"
-        )
-
-    id_token = hass.data[DOMAIN].get("id_token")
-    parsed_data = None
-    plan_features = None
-    async with OasiraAPIClient(system_id=system_id, id_token=id_token) as api_client:
-        async def _run_customer_system() -> Any:
-            _id_token = hass.data[DOMAIN].get("id_token")
-            if not _id_token:
-                raise OasiraAPIError("Missing id_token for customer/system lookup")
-            async with OasiraAPIClient(system_id=system_id, id_token=_id_token) as client:
-                return await client.get_customer_and_system()
-
-        try:
-            parsed_data = await safe_api_call(hass, _run_customer_system)
-        except OasiraAPIError as e:
-            if "401" in str(e):
-                _LOGGER.warning("Customer/system lookup failed after token refresh: %s", e)
-                raise ConfigEntryAuthFailed(
-                    f"Failed to fetch customer/system data after refresh: {e}"
-                ) from e
-            _LOGGER.error("Failed to fetch customer/system data: %s", e)
-            raise
-
-        if parsed_data is None:
-            raise HomeAssistantError("Could not retrieve customer/system data.")
-
-        try:
-            plan_features = await api_client.get_plan_features_by_system_id()
-        except Exception as pf_exc:
-            _LOGGER.warning("Failed to fetch plan features: %s", pf_exc)
-            plan_features = None
-
-        # Setup mobile_app integration with Firebase config from Oasira
-        try:
-            mobile_app_success = await setup_mobile_app_config(hass, api_client)
-            #mobile_app_success = await setup_mobile_app_integration(hass, api_client)
-            if mobile_app_success:
-                _LOGGER.info(
-                    "✅ Firebase config retrieved from Oasira and stored for Oasira services. "
-                    "Note: Home Assistant's mobile_app integration requires manual configuration.yaml setup. "
-                    "Firebase configuration is managed internally by Oasira services."
-                )
-            else:
-                _LOGGER.info(
-                    "Firebase config not available from Oasira. "
-                    "This is optional and does not affect other features."
-                )
-        except Exception as mobile_exc:
+    if is_node:
+        parsed_data = dict(NODE_ACCOUNT_DEFAULTS, name=entry.data.get("facility_name", ""))
+        plan_features = None
+    else:
+        if not await ensure_valid_id_token(hass):
             _LOGGER.warning(
-                "Could not setup mobile app integration: %s",
-                mobile_exc,
-                exc_info=True,
+                "Startup token validation failed; refresh or reauth may be required"
             )
+
+        id_token = hass.data[DOMAIN].get("id_token")
+        parsed_data = None
+        plan_features = None
+        async with OasiraAPIClient(system_id=system_id, id_token=id_token) as api_client:
+            async def _run_customer_system() -> Any:
+                _id_token = hass.data[DOMAIN].get("id_token")
+                if not _id_token:
+                    raise OasiraAPIError("Missing id_token for customer/system lookup")
+                async with OasiraAPIClient(system_id=system_id, id_token=_id_token) as client:
+                    return await client.get_customer_and_system()
+
+            try:
+                parsed_data = await safe_api_call(hass, _run_customer_system)
+            except OasiraAPIError as e:
+                if "401" in str(e):
+                    _LOGGER.warning("Customer/system lookup failed after token refresh: %s", e)
+                    raise ConfigEntryAuthFailed(
+                        f"Failed to fetch customer/system data after refresh: {e}"
+                    ) from e
+                _LOGGER.error("Failed to fetch customer/system data: %s", e)
+                raise
+
+            if parsed_data is None:
+                raise HomeAssistantError("Could not retrieve customer/system data.")
+
+            try:
+                plan_features = await api_client.get_plan_features_by_system_id()
+            except Exception as pf_exc:
+                _LOGGER.warning("Failed to fetch plan features: %s", pf_exc)
+                plan_features = None
 
     hass.data[DOMAIN] = {
         "entry_id": entry.entry_id,
         "config_entry": entry,
-        "token_store": hass.data[DOMAIN]["token_store"],
-        "notification_tokens": hass.data[DOMAIN]["notification_tokens"],
-        "virtual_power_store": virtual_power_store,
-        "virtual_power_profiles": virtual_power_profiles,
-        "person_notification_manager": person_notification_manager,
-        "fullname": parsed_data["fullname"],
-        "phonenumber": parsed_data["phonenumber"],
-        "emailaddress": parsed_data["emailaddress"],
-        "ha_token": parsed_data["ha_token"],
-        "ha_url": parsed_data["ha_url"],
-        "ai_key": parsed_data["ai_key"],
-        "ai_model": parsed_data["ai_model"],
-        "email": parsed_data["emailaddress"],
-        "username": parsed_data["emailaddress"],
+        "emailaddress": parsed_data.get("emailaddress"),
+        "ha_token": parsed_data.get("ha_token"),
+        "ha_url": parsed_data.get("ha_url"),
         "systemid": system_id,
         "customerid": customer_id,
         "id_token": id_token,
         "refresh_token": entry.data.get("refresh_token"),
-        "DaysHistoryToKeep": parsed_data["DaysHistoryToKeep"],
-        "LowTemperatureWarning": parsed_data["LowTemperatureWarning"],
-        "HighTemperatureWarning": parsed_data["HighTemperatureWarning"],
-        "LowHumidityWarning": parsed_data["LowHumidityWarning"],
-        "HighHumidityWarning": parsed_data["HighHumidityWarning"],
-        "address_json": parsed_data["address_json"],
-        "systemphotolurl": parsed_data["systemphotolurl"],
-        "testmode": parsed_data["testmode"],
-        "additional_contacts_json": parsed_data["additional_contacts_json"],
-        "instructions_json": parsed_data["instructions_json"],
-        "plan": parsed_data["name"],
+        "DaysHistoryToKeep": parsed_data.get("DaysHistoryToKeep"),
+        "testmode": parsed_data.get("testmode"),
+        "plan": parsed_data.get("name"),
         "plan_features": plan_features,
     }
 
@@ -717,99 +235,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model=NAME,
     )
 
-    # Initialize the OpenAI-compatible client before forwarding AI platforms.
-    try:
-        ai_client = await get_ai_authenticated_client(
-            hass=hass,
-            timeout=entry.options.get(AI_CONF_TIMEOUT, AI_DEFAULT_TIMEOUT),
-        )
-        entry.runtime_data = ai_client
-        hass.data.setdefault(DOMAIN, {})["ai_runtime_client"] = ai_client
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as ai_err:
-        _LOGGER.error("Failed to initialize the OpenAI-compatible AI client: %s", ai_err)
-        raise ConfigEntryNotReady(
-            f"Unable to connect to the Oasira agent at {AI_DEFAULT_CONF_BASE_URL}"
-        ) from ai_err
-
     await hass.config_entries.async_forward_entry_setups(
-        entry,
-        [
-            "switch",
-            "binary_sensor",
-            "sensor",
-            "cover",
-            "light",
-            "alarm_control_panel",
-            "button",
-            "conversation",
-            "ai_task",
-            "tts",
-            "stt",
-        ],
+        entry, NODE_PLATFORMS if is_node else ACCOUNT_PLATFORMS
     )
 
-    # Register custom notification platform
-    await async_setup_notification_platform(hass)
-
-    care_api_url = entry.options.get(CONF_CARE_API_URL)
-    care_api_key = entry.options.get(CONF_CARE_API_KEY)
+    if is_node:
+        care_api_url = entry.data["api_url"]
+        care_api_key = entry.data["api_key"]
+    else:
+        care_api_url = entry.options.get(CONF_CARE_API_URL)
+        care_api_key = entry.options.get(CONF_CARE_API_KEY)
     if care_api_url and care_api_key:
-        streamer = CareStreamer(hass, care_api_url, care_api_key)
+        streamer = CareStreamer(
+            hass,
+            care_api_url,
+            care_api_key,
+            on_auth_failed=(lambda: entry.async_start_reauth(hass)) if is_node else None,
+        )
         hass.data[DOMAIN]["care_streamer"] = streamer
         await streamer.async_start()
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    # Unregister if already registered
-    webhook.async_unregister(hass, "oasira_push_token")
-    webhook.async_unregister(hass, "oasira_remove_push_token")
-    webhook.async_unregister(hass, "oasira_location_update")
-
-    security_webhook = SecurityAlarmWebhook(hass)
-    await SecurityAlarmWebhook.async_setup_webhook(security_webhook)
-
-    broadcast_webhook = BroadcastWebhook(hass)
-    await BroadcastWebhook.async_setup_webhook(broadcast_webhook)
-
-    webhook.async_register(
-        hass,
-        DOMAIN,
-        "Oasira Push Token",
-        "oasira_push_token",
-        handle_oasira_push_token_webhook,
-    )
-
-    _LOGGER.info("[Oasira] Webhook registered: %s", "oasira_push_token")
-
-    webhook.async_register(
-        hass,
-        DOMAIN,
-        "Oasira Remove Push Token",
-        "oasira_remove_push_token",
-        handle_oasira_remove_push_token_webhook,
-    )
-
-    _LOGGER.info(
-        "[Oasira] Webhook registered: %s",
-        "oasira_remove_push_token",
-    )
-
-    webhook_id = "oasira_location_update"
-
-    webhook.async_register(
-        hass,
-        DOMAIN,
-        "Oasira Location Update",
-        webhook_id,
-        handle_oasira_location_update,
-    )
-
-    _LOGGER.info("[Oasira] Webhook registered: %s", webhook_id)
-
     register_services(hass)
-    await async_setup_ai_services(hass, {})
     await async_setup_timeline_services(hass)
-    await async_setup_energy_advisor(hass)
-    await async_setup_ai_templates(hass)
 
     # Removed deploy_latest_config(hass) from initialization. Now triggered by button entity.
     label_registry = lr.async_get(hass)
@@ -832,18 +280,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:
             _LOGGER.warning("Failed to create motion sensor groups: %s", e)
 
-
         await loaddevicegroups(None)
-
-        # TODO: Update the link below with the actual add-on slug
-        # notify_create(
-        #    hass,
-        #    title="Oasira Add-on Required",
-        #    message=(
-        #        "The Oasira integration needs the Oasira Add-on. "
-        #        "Click [here](https://my.home-assistant.io/redirect/supervisor_addon/?addon=<your_slug>) to install it."
-        #    ),
-        # )
 
     # Listen for the 'homeassistant_started' event
     hass.bus.async_listen_once(
@@ -882,7 +319,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Schedule the refresh task after setup completes to avoid blocking startup
     async def schedule_refresh_task(*_):
         hass.async_create_task(refresh_firebase_token())
-    hass.bus.async_listen_once("homeassistant_started", schedule_refresh_task)
+    if not is_node:
+        hass.bus.async_listen_once("homeassistant_started", schedule_refresh_task)
 
     return True
 
@@ -893,10 +331,10 @@ def _deploy_latest_config_sync(hass: HomeAssistant):
 
     source_themes_dir = os.path.join(integration_dir, "themes")
     source_blueprints_dir = os.path.join(integration_dir, "blueprints")
-    source_dir = os.path.join(integration_dir, "www/oasira_b2c")
+    source_dir = os.path.join(integration_dir, "www/oasira_b2b")
 
     target_themes_dir = hass.config.path("themes")
-    target_dir = hass.config.path("www/oasira_b2c")
+    target_dir = hass.config.path("www/oasira_b2b")
     target_blueprints_dir = hass.config.path("blueprints")
 
     # Ensure destination directories exist
@@ -927,51 +365,15 @@ async def deploy_latest_config(hass: HomeAssistant):
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
 
-    if entry.data.get("api_key"):
-        streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
-        if streamer is not None:
-            await streamer.async_stop()
-        return True
-
-    if hass.data.get(DOMAIN, {}).get("ai_runtime_client") is getattr(
-        entry, "runtime_data", None
-    ):
-        hass.data[DOMAIN].pop("ai_runtime_client", None)
+    is_node = bool(entry.data.get("api_key"))
 
     streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
     if streamer is not None:
         await streamer.async_stop()
 
     await hass.config_entries.async_unload_platforms(
-        entry,
-        [
-            "switch",
-            "binary_sensor",
-            "sensor",
-            "cover",
-            "light",
-            "alarm_control_panel",
-            "button",
-            "conversation",
-            "ai_task",
-            "tts",
-            "stt",
-        ],
+        entry, NODE_PLATFORMS if is_node else ACCOUNT_PLATFORMS
     )
-
-    await async_unload_ai_templates(hass)
-
-    # Unregister the notify service
-    if hass.services.has_service("notify", "Oasira"):
-        hass.services.async_remove("notify", "Oasira")
-
-    # Remove backward-compatible service aliases if present
-    if hass.services.has_service(DOMAIN, "create_alert_service"):
-        hass.services.async_remove(DOMAIN, "create_alert_service")
-
-    webhook.async_unregister(hass, "oasira_push_token")
-    webhook.async_unregister(hass, "oasira_remove_push_token")
-    webhook.async_unregister(hass, "oasira_location_update")
 
     return True
 
@@ -1022,10 +424,6 @@ def register_services(hass: HomeAssistant) -> None:
 
     # Register our service with Home Assistant.
     hass.services.async_register(DOMAIN, "create_event", create_event)
-    hass.services.async_register(DOMAIN, "cancel_alarm", cancel_alarm)
-    hass.services.async_register(DOMAIN, "get_alarm_status", get_alarm_status)
-    hass.services.async_register(DOMAIN, "confirm_pending_alarm", confirm_pending_alarm)
-
     hass.services.async_register(DOMAIN, "update_entity", update_entity)
 
     hass.services.async_register(DOMAIN, "create_alert", create_alert)
@@ -1042,239 +440,6 @@ def register_services(hass: HomeAssistant) -> None:
             {vol.Required("entity_id"): cv.entity_id, vol.Required("label"): cv.string}
         ),
     )
-
-    hass.services.async_register(
-        DOMAIN,
-        "add_person_notification_device",
-        add_person_notification_device,
-        schema=vol.Schema(
-            {
-                vol.Required("email"): cv.string,
-                vol.Required("device_token"): cv.string,
-                vol.Required("device_name"): cv.string,
-                vol.Required("platform"): vol.In(["ios", "android", "web"]),
-            }
-        ),
-    )
-
- 
-
-    hass.services.async_register(
-        DOMAIN,
-        "remove_person_notification_device",
-        remove_person_notification_device,
-        schema=vol.Schema(
-            {
-                vol.Required("email"): cv.string,
-                vol.Required("device_name"): cv.string,
-            }
-        ),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "send_person_notification",
-        send_person_notification,
-        schema=vol.Schema(
-            {
-                vol.Required("email"): cv.string,
-                vol.Required("title"): cv.string,
-                vol.Required("message"): cv.string,
-                vol.Optional("data"): dict,
-            }
-        ),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "add_virtual_power_device",
-        add_virtual_power_device,
-        schema=vol.Schema(
-            {
-                vol.Optional("entity_id"): cv.entity_id,
-                vol.Optional("name"): cv.string,
-                vol.Required("wattage"): vol.Coerce(float),
-                vol.Optional("always_on", default=False): cv.boolean,
-            }
-        ),
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        "remove_virtual_power_device",
-        remove_virtual_power_device,
-        schema=vol.Schema(
-            {
-                vol.Optional("entity_id"): cv.entity_id,
-                vol.Optional("name"): cv.string,
-            }
-        ),
-    )
-
-async def async_setup_notification_platform(hass: HomeAssistant):
-    """Set up the oasira notification platform."""
-    try:
-        service = OasiraNotificationService(hass)
-
-        async def handle_notify_service(call: ServiceCall) -> None:
-            """Handle notify.oasira service calls."""
-            message = call.data.get("message", "")
-            title = call.data.get("title")
-            data = call.data.get("data")
-
-            kwargs = {}
-            if title is not None:
-                kwargs[ATTR_TITLE] = title
-            if data is not None:
-                kwargs[ATTR_DATA] = data
-
-            await service.async_send_message(message=message, **kwargs)
-
-        # Register the notification service
-        hass.services.async_register(
-            "notify",
-            "oasira",
-            handle_notify_service,
-            schema=vol.Schema(
-                {
-                    vol.Required("message"): cv.string,
-                    vol.Optional("title"): cv.string,
-                    vol.Optional("data"): dict,
-                }
-            ),
-        )
-
-        _LOGGER.info(
-            "✅ oasira notification service registered: notify.oasira"
-        )
-        return True
-
-    except Exception as e:
-        _LOGGER.error(f"Failed to setup notification platform: {e}", exc_info=True)
-        return False
-
-def _build_virtual_profile_key(entity_id: str | None, name: str | None, always_on: bool) -> str:
-    """Build a stable key for a virtual power profile."""
-    if not always_on and entity_id:
-        return entity_id
-
-    normalized = (name or "always_on_device").strip().lower().replace(" ", "_")
-    return f"always_on:{normalized}"
-
-
-async def _save_virtual_power_profiles(hass: HomeAssistant) -> None:
-    """Persist virtual power profiles to Home Assistant storage."""
-    domain_data = hass.data.get(DOMAIN, {})
-    store = domain_data.get("virtual_power_store")
-    profiles = domain_data.get("virtual_power_profiles", [])
-    if store is not None:
-        await store.async_save(profiles)
-
-
-async def _reload_oasira_entry(hass: HomeAssistant) -> None:
-    """Reload this integration entry so profile-based entities are rebuilt."""
-    entry = hass.data.get(DOMAIN, {}).get("config_entry")
-    if entry is None:
-        return
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def add_virtual_power_device(call: ServiceCall) -> None:
-    """Add or update a virtual power profile for total home usage estimation."""
-    hass = HASSComponent.get_hass()
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    profiles = list(domain_data.get("virtual_power_profiles", []))
-
-    entity_id = call.data.get("entity_id")
-    name = call.data.get("name")
-    always_on = bool(call.data.get("always_on", False))
-    wattage = float(call.data.get("wattage", 0.0))
-
-    if wattage < 0:
-        _LOGGER.error("wattage must be >= 0")
-        return
-
-    if not always_on and not entity_id:
-        _LOGGER.error("entity_id is required when always_on is false")
-        return
-
-    if always_on and not name:
-        _LOGGER.error("name is required when always_on is true")
-        return
-
-    profile_key = _build_virtual_profile_key(entity_id, name, always_on)
-    profile_name = name or entity_id
-
-    profile = {
-        "key": profile_key,
-        "entity_id": entity_id,
-        "name": profile_name,
-        "wattage": wattage,
-        "always_on": always_on,
-    }
-
-    updated = False
-    for idx, existing in enumerate(profiles):
-        if existing.get("key") == profile_key:
-            profiles[idx] = profile
-            updated = True
-            break
-
-    if not updated:
-        profiles.append(profile)
-
-    domain_data["virtual_power_profiles"] = profiles
-    await _save_virtual_power_profiles(hass)
-
-    _LOGGER.info(
-        "%s virtual power profile: %s (%s W)",
-        "Updated" if updated else "Added",
-        profile_name,
-        wattage,
-    )
-
-    await _reload_oasira_entry(hass)
-
-
-async def remove_virtual_power_device(call: ServiceCall) -> None:
-    """Remove a virtual power profile by entity_id or name."""
-    hass = HASSComponent.get_hass()
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    profiles = list(domain_data.get("virtual_power_profiles", []))
-
-    entity_id = call.data.get("entity_id")
-    name = call.data.get("name")
-
-    if not entity_id and not name:
-        _LOGGER.error("entity_id or name is required")
-        return
-
-    normalized_name = (name or "").strip().lower().replace(" ", "_")
-    before_count = len(profiles)
-    profiles = [
-        profile
-        for profile in profiles
-        if not (
-            (entity_id and profile.get("entity_id") == entity_id)
-            or (
-                name
-                and (
-                    str(profile.get("name", "")).strip().lower().replace(" ", "_")
-                    == normalized_name
-                )
-            )
-        )
-    ]
-
-    if len(profiles) == before_count:
-        _LOGGER.warning("No matching virtual power profile found to remove")
-        return
-
-    domain_data["virtual_power_profiles"] = profiles
-    await _save_virtual_power_profiles(hass)
-    _LOGGER.info("Removed virtual power profile")
-
-    await _reload_oasira_entry(hass)
 
 
 async def update_entity(call):
@@ -1361,12 +526,10 @@ async def create_event(call: ServiceCall) -> None:
         return None
     return None
 
-
 # Keep old name for backward compatibility
 async def createevent(calldata) -> None:
     """Create event (deprecated name)."""
     await create_event(calldata)
-
 
 async def create_alert(call: ServiceCall) -> None:
     """Create alert."""
@@ -1423,35 +586,6 @@ async def createalert(calldata) -> None:
     """Create alert (deprecated name)."""
     await create_alert(calldata)
 
-
-async def cancel_alarm(call: ServiceCall) -> None:
-    """Cancel alarm."""
-    hass = HASSComponent.get_hass()
-    return await async_cancelalarm(hass)
-
-
-# Keep old name for backward compatibility
-async def cancelalarm(calldata) -> None:
-    """Cancel alarm (deprecated name)."""
-    await cancel_alarm(calldata)
-
-
-async def get_alarm_status(call: ServiceCall) -> None:
-    """Get alarm status."""
-    hass = HASSComponent.get_hass()
-    return await async_getalarmstatus(hass)
-
-
-# Keep old name for backward compatibility
-async def getalarmstatus(calldata) -> None:
-    """Get alarm status (deprecated name)."""
-    await get_alarm_status(calldata)
-
-
-async def confirm_pending_alarm(call: ServiceCall) -> None:
-    """Confirm pending alarm."""
-    hass = HASSComponent.get_hass()
-    return await async_confirmpendingalarm(hass)
 
 def _clean_motion_files_sync(hass, age):
     """Synchronous helper to delete old snapshots."""
@@ -1510,364 +644,6 @@ async def handle_deploy_latest_config(call: ServiceCall) -> None:
     hass = HASSComponent.get_hass()
 
     await deploy_latest_config(hass)
-
-
-# sampledata
-# {
-#    email:
-#    token:
-#    device_name: master_bedroom_tv
-#    platform: android
-# }
-
-
-async def handle_oasira_push_token_webhook(hass, webhook_id, request):
-    """Handle incoming Oasira Push Token webhook (device token)."""
-
-    _LOGGER.info("[Oasira] 🔔 Handling push token webhook")
-    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
-
-    try:
-        data = await request.json()
-        _LOGGER.info(
-            "[Oasira] 🔔 Push token payload: %s",
-            {k: v if k != "token" else f"{v[:20]}..." for k, v in data.items()},
-        )
-    except Exception as e:
-        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
-        return web.Response(status=400, text="Invalid JSON")
-
-    token = data.get("token")
-    device_name = data.get("device_name")
-    platform_name = data.get("platform")
-
-    _LOGGER.info(
-        "[Oasira] 🔔 Parsed data - device_name: %s, platform: %s, token_length: %s",
-        device_name,
-        platform_name,
-        len(token) if token else 0,
-    )
-
-    if not token:
-        _LOGGER.error(
-            "[Oasira] ❌ Webhook called without required field (token)."
-        )
-        return web.Response(status=400, text="Missing token")
-
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    tokens = domain_data.setdefault("notification_tokens", [])
-    _LOGGER.info(
-        "[Oasira] Current token count: %s",
-        len(tokens),
-    )
-    if token not in tokens:
-        tokens.append(token)
-        token_store = domain_data.get("token_store")
-        if token_store is not None:
-            await token_store.async_save(tokens)
-        _LOGGER.info(
-            "[Oasira] Token added. New token count: %s",
-            len(tokens),
-        )
-    else:
-        _LOGGER.info("[Oasira] Token already registered")
-
-    _LOGGER.info(
-        "[Oasira] ✅ Push token registered successfully for %s", device_name
-    )
-    return web.json_response({"status": "success", "message": "Token registered"})
-
-
-async def handle_oasira_remove_push_token_webhook(hass, webhook_id, request):
-    """Handle incoming Oasira remove push token webhook."""
-
-    _LOGGER.info("[Oasira] 🔔 Handling remove push token webhook")
-    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
-
-    try:
-        data = await request.json()
-        _LOGGER.info(
-            "[Oasira] 🔔 Remove token payload: %s",
-            {k: v if k != "token" else f"{v[:20]}..." for k, v in data.items()},
-        )
-    except Exception as e:
-        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
-        return web.Response(status=400, text="Invalid JSON")
-
-    token = data.get("token")
-    if not token:
-        _LOGGER.error(
-            "[Oasira] ❌ Webhook called without required field (token)."
-        )
-        return web.Response(status=400, text="Missing token")
-
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    tokens = domain_data.setdefault("notification_tokens", [])
-
-    if token in tokens:
-        tokens.remove(token)
-        token_store = domain_data.get("token_store")
-        if token_store is not None:
-            await token_store.async_save(tokens)
-        _LOGGER.info("[Oasira] ✅ Push token removed successfully")
-        return web.json_response({"status": "success", "message": "Token removed"})
-
-    _LOGGER.info("[Oasira] Token not found - nothing to remove")
-    return web.json_response({"status": "success", "message": "Token not found"})
-
-
-# {
-#  "device_id": "unique_device_identifier",
-#  "device_name": "Samsung Galaxy S21",
-#  "latitude": 37.7749,
-#  "longitude": -122.4194,
-#  "gps_accuracy": 10.5,
-#  "altitude": 15.0,
-#  "speed": 0.0,
-#  "heading": 0.0,
-#  "timestamp": "2026-01-30T10:30:00.000Z",
-#  "attributes": {
-#    "platform": "android",
-#    "brand": "Samsung",
-#    "model": "SM-G991B",
-#    "version": "13",
-#    "sdk_int": 33
-#  }
-# }
-async def handle_oasira_location_update(hass, webhook_id, request):
-    """Register Oasira location update service."""
-
-    _LOGGER.info("[Oasira] 📍 Handling location update webhook")
-    _LOGGER.info("[Oasira] Request headers: %s", dict(request.headers))
-    try:
-        data = await request.json()
-        _LOGGER.info("[Oasira] 📍 Location update payload: %s", data)
-    except Exception as e:
-        _LOGGER.error("[Oasira] ❌ Invalid JSON payload: %s", e)
-        return web.Response(status=400, text="Invalid JSON")
-
-    ####TODO: get user's email here and link this device tracker to them (local and online) #####
-
-    device_name = data.get("device_name")
-    device_id = data.get("device_id")
-    lat = data.get("latitude")
-    lon = data.get("longitude")
-    accuracy = data.get("accuracy", 30.0)
-
-    _LOGGER.info(
-        "[Oasira] 📍 Parsed data - device_id: %s, lat: %s, lon: %s, accuracy: %s",
-        device_id,
-        lat,
-        lon,
-        accuracy,
-    )
-
-    if not device_id or lat is None or lon is None:
-        _LOGGER.error(
-            "[Oasira] ❌ Missing required fields - device_id: %s, lat: %s, lon: %s",
-            device_id,
-            lat,
-            lon,
-        )
-        return web.Response(status=400, text="Missing required fields")
-
-    device_id_new = (
-        device_id.lower()
-        .replace("@", "_")
-        .replace(".", "_")
-        .replace("-", "_")
-        .replace("{", "")
-        .replace("}", "")
-    )
-    entity_id = f"device_tracker.{device_id_new}"
-
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    entry_id = domain_data.get("entry_id")
-    device_registry = dr.async_get(hass)
-    device_entry = device_registry.async_get_or_create(
-        config_entry_id=entry_id,
-        identifiers={(DOMAIN, device_id_new)},
-        name=device_name or device_id_new,
-        manufacturer=NAME,
-        model="Mobile Device",
-    )
-
-    entity_registry = er.async_get(hass)
-    entity_entry = entity_registry.async_get_or_create(
-        domain="device_tracker",
-        platform=DOMAIN,
-        unique_id=f"{DOMAIN}_tracker_{device_id_new}",
-        suggested_object_id=device_id_new,
-        device_id=device_entry.id,
-        original_name=device_name or device_id_new,
-    )
-    entity_id = entity_entry.entity_id
-
-    _LOGGER.info("[Oasira] 📍 Creating/updating device tracker: %s", entity_id)
-
-    # Update or create entity with immediate geofencing state determination
-    # Calculate the state based on location coordinates right away
-    state = "unknown"
-
-    try:
-        # Try to get home coordinates for immediate state calculation
-        home_coords = None
-        system_data = hass.data.get(DOMAIN, {})
-        address_json = system_data.get("address_json")
-
-        if address_json:
-            if isinstance(address_json, str):
-                address_data = json.loads(address_json)
-            else:
-                address_data = address_json
-
-            home_lat = address_data.get("latitude")
-            home_lon = address_data.get("longitude")
-
-            if home_lat is not None and home_lon is not None:
-                home_coords = (float(home_lat), float(home_lon))
-
-        # Fallback to HA config coordinates
-        if not home_coords:
-            try:
-                home_lat = hass.config.latitude
-                home_lon = hass.config.longitude
-                if home_lat is not None and home_lon is not None:
-                    home_coords = (float(home_lat), float(home_lon))
-            except:
-                pass
-
-        # Calculate distance and determine state
-        if home_coords:
-            home_lat, home_lon = home_coords
-
-            # Earth's radius in meters
-            R = 6371000
-
-            # Convert degrees to radians
-            lat1_rad = math.radians(home_lat)
-            lon1_rad = math.radians(home_lon)
-            lat2_rad = math.radians(lat)
-            lon2_rad = math.radians(lon)
-
-            # Haversine formula
-            dlat = lat2_rad - lat1_rad
-            dlon = lon2_rad - lon1_rad
-
-            a = (
-                math.sin(dlat / 2) ** 2
-                + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2
-            )
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-            distance = R * c
-            radius = 100.0  # 100 meter radius
-
-            if distance <= radius:
-                state = "home"
-            else:
-                state = "not_home"
-
-    except Exception as e:
-        _LOGGER.debug("[Oasira] Could not calculate geofence state: %s", e)
-        state = "unknown"
-
-    hass.states.async_set(
-        entity_id,
-        state,
-        {
-            "latitude": lat,
-            "longitude": lon,
-            "gps_accuracy": accuracy,
-            "source_type": SOURCE_TYPE_GPS,
-            "friendly_name": f" {device_name}",
-        },
-    )
-
-    _LOGGER.info("[Oasira] ✅ Location update successful for %s", entity_id)
-    return web.json_response({"status": "success", "message": "Location updated"})
-
-
-async def add_person_notification_device(call: ServiceCall) -> None:
-    """Add a notification device to a person."""
-    hass = call.hass
-    email = call.data.get("email")
-    device_token = call.data.get("device_token")
-    device_name = call.data.get("device_name")
-    platform = call.data.get("platform")
-
-    if not email or not device_token or not device_name or not platform:
-        _LOGGER.error(
-            "Missing required parameters for add_person_notification_device"
-        )
-        return
-
-    manager = hass.data.get(DOMAIN, {}).get("person_notification_manager")
-    if not manager:
-        _LOGGER.error("PersonNotificationManager not initialized")
-        return
-
-    success = await manager.add_device_to_person(
-        email, device_token, device_name, platform
-    )
-
-    if success:
-        _LOGGER.info(
-            "Successfully added notification device '%s' for %s", device_name, email
-        )
-    else:
-        _LOGGER.error(
-            "Failed to add notification device '%s' for %s", device_name, email
-        )
-
-
-async def remove_person_notification_device(call: ServiceCall) -> None:
-    """Remove a notification device from a person."""
-    hass = call.hass
-    email = call.data.get("email")
-    device_name = call.data.get("device_name")
-
-    if not email or not device_name:
-        _LOGGER.error(
-            "Missing required parameters for remove_person_notification_device"
-        )
-        return
-
-    manager = hass.data.get(DOMAIN, {}).get("person_notification_manager")
-    if not manager:
-        _LOGGER.error("PersonNotificationManager not initialized")
-        return
-
-    success = await manager.remove_device_from_person(email, device_name)
-
-    if success:
-        _LOGGER.info(
-            "Successfully removed notification device '%s' for %s", device_name, email
-        )
-    else:
-        _LOGGER.error(
-            "Failed to remove notification device '%s' for %s", device_name, email
-        )
-
-
-async def send_person_notification(call: ServiceCall) -> None:
-    """Send a notification to a person on all their registered devices."""
-    hass = call.hass
-    email = call.data.get("email")
-    title = call.data.get("title")
-    message = call.data.get("message")
-    data = call.data.get("data", {})
-
-    if not email or not title or not message:
-        _LOGGER.error("Missing required parameters for send_person_notification")
-        return
-
-    success = await send_notification_to_person(hass, email, title, message, data)
-
-    if success:
-        _LOGGER.info("Successfully sent notification to %s", email)
-    else:
-        _LOGGER.error("Failed to send notification to %s", email)
 
 
 

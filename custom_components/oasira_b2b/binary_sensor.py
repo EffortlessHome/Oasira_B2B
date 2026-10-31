@@ -15,8 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from typing import Any
 from homeassistant.core import State
 
-from .alarm_common import async_cancelalarm, async_creatependingalarm
-from .const import ALARM_TYPE_MED_ALERT, ALARM_TYPE_MONITORING, DOMAIN, NAME
+from .const import DOMAIN, NAME
 from .facerecognition import PersonFaceRecognitionSensor
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ async def async_setup_entry(
     """Set up entities."""
     HASSComponent.set_hass(hass)
 
-    async_add_entities([MonitoringAlarm()])
     async_add_entities([SleepingSensor()])
     async_add_entities([SomeoneHomeSensor()])
     async_add_entities([SmokeGroup()])
@@ -61,12 +59,6 @@ def checkforlabel(labels, value_to_check) -> bool:
         return True
     _LOGGER.debug(f"'{value_to_check}' is not in parsed_labels. '{parsed_labels}'")
     return False
-
-
-async def updateEntity(area_id, state):
-    sensor = ENTITY_REGISTRY.get(area_id)
-    if sensor:
-        sensor.set_state(state)
 
 
 class HASSComponent:
@@ -414,157 +406,6 @@ class SmokeGroup(BinarySensorEntity, RestoreEntity):
             self._state = sensor_state.state  # type: ignore  # noqa: PGH003
         else:
             sensor_state = "unknown"
-
-
-class BinaryMedAlertSensor(BinarySensorEntity, RestoreEntity):
-    """Representation of a sensor."""
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, NAME)},
-            "name": NAME,
-            "manufacturer": NAME,
-        }
-
-    async def async_added_to_hass(self):
-        self.async_on_remove(
-            self.hass.bus.async_listen(
-                "medical_alert_switch_updated", self._handle_switch_event
-            )
-        )
-
-    async def _handle_switch_event(self, event):
-        self._state = "on" if event.data["is_on"] else "off"
-        self.async_write_ha_state()
-
-    @property
-    def device_class(self) -> BinarySensorDeviceClass | None:
-        """Return the device_class of the sensor."""
-        return None
-
-    def __init__(self) -> None:
-        """Initialize the sensor."""
-        self._state = "off"
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        return "Medical Alert Sensor"
-
-    @property
-    def unique_id(self) -> str:
-        """Return the unique ID of the sensor."""
-        return self.name
-
-    @property
-    def icon(self):
-        # Return the specified icon or a default one
-        return "mdi:ambulance"
-
-    @property
-    def state(self):  # noqa: ANN201
-        """Return the state of the sensor."""
-        return self._state
-
-    async def async_update(self) -> None:
-        """Fetch new state data for the sensor.
-
-        This is the only method that should fetch new data for Home Assistant.
-        """
-
-        entity_id = "switch.medicalalertalarm"
-        switch_state = self.hass.states.get(entity_id)
-
-        turnOn = self._state == "off" and switch_state.state == "on"
-        turnOff = self._state == "on" and switch_state.state == "off"
-
-        self._state = switch_state.state
-
-        if turnOn:
-            await async_creatependingalarm(self.hass, ALARM_TYPE_MED_ALERT, None)
-        elif turnOff:
-            hass = HASSComponent.get_hass()
-            await async_cancelalarm(hass)
-
-
-class MonitoringAlarm(BinarySensorEntity, RestoreEntity):
-    """Representation of a sensor."""
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, NAME)},
-            "name": NAME,
-            "manufacturer": NAME,
-        }
-
-    async def async_added_to_hass(self):
-        self.async_on_remove(
-            self.hass.bus.async_listen(
-                "monitoring_alarm_switch_updated", self._handle_switch_event
-            )
-        )
-
-    async def _handle_switch_event(self, event):
-        self._state = "on" if event.data["is_on"] else "off"
-        self.async_write_ha_state()
-
-    @property
-    def device_class(self) -> BinarySensorDeviceClass | None:
-        """Return the device_class of the sensor."""
-        return None
-
-    def __init__(self) -> None:
-        """Initialize the sensor."""
-        self._state = "off"
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        return "Monitoring Alarm Sensor"
-
-    @property
-    def unique_id(self) -> str:
-        """Return the unique ID of the sensor."""
-        return self.name
-
-    @property
-    def icon(self):
-        # Return the specified icon or a default one
-        return "mdi:shield-account-outline"
-
-    @property
-    def state(self):
-        """Return the state of the sensor."""
-        return self._state
-
-async def async_update(self) -> None:
-    """Fetch new state data for the sensor."""
-
-    entity_id = "switch.monitoringalarm"
-    switch_state = self.hass.states.get(entity_id)
-
-    # Safely retrieve the state
-    new_state = switch_state.state if switch_state is not None else None
-
-    turn_on = self._state == "off" and new_state == "on"
-    turn_off = self._state == "on" and new_state == "off"
-
-    self._state = new_state
-
-    if turn_on:
-        await async_creatependingalarm(
-            self.hass,
-            ALARM_TYPE_MONITORING,
-            None,
-        )
-    elif turn_off:
-        hass = HASSComponent.get_hass()
-        if hass is not None:
-            await async_cancelalarm(hass)
 
 
 class SleepingSensor(BinarySensorEntity, RestoreEntity):

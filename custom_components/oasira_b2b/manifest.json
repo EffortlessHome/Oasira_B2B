@@ -8,8 +8,6 @@
   "dependencies": [
     "http",
     "recorder",
-    "conversation",
-    "ai_task",
     "scrape",
     "rest",
     "energy"

@@ -24,7 +24,6 @@ blueprint:
           multiple: false
     ai_task_entity:
       name: AI Task Entity
-      default: ai_task.oasira_ai_task
       selector:
         entity:
           domain: ai_task

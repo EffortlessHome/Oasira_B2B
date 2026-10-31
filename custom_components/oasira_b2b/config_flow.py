@@ -92,6 +92,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         """Collect the API URL and one-time enrollment code."""
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+
         errors: dict[str, str] = {}
 
         if user_input is not None:

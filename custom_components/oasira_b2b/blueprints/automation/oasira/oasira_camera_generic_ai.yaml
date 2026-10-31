@@ -28,7 +28,6 @@ blueprint:
       description: Enter the prompt to use to detect something in the image captured by motion
     ai_task_entity:
       name: AI Task Entity
-      default: ai_task.oasira_ai_task
       selector:
         entity:
           domain: ai_task

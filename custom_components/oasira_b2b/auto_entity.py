@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import StateType
 
 from .auto_area import AutoArea
 from .calculations import get_calculation
+from .const import DOMAIN, NAME
 
 _TEntity = TypeVar("_TEntity", bound=Entity)
 _TDeviceClass = TypeVar(

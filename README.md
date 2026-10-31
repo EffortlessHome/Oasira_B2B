@@ -3,7 +3,7 @@
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/EffortlessHome/Oasira_B2B)
 
-Oasira Business is a Home Assistant integration focused on security orchestration, area-aware automation, timeline events, and built-in AI workflows.
+Oasira Business is a Home Assistant integration focused on security orchestration, area-aware automation, and timeline events.
 
 ## Core Capabilities
 
@@ -12,8 +12,6 @@ Oasira Business is a Home Assistant integration focused on security orchestratio
 - Motion and monitoring automation support with entity grouping and routine orchestration
 - Alert and event logging services for operational visibility
 - Timeline event workflows for camera snapshots, video clips, person events, review/favorite updates, and cleanup
-- AI features for Home Assistant conversation and AI task execution with configurable Ollama endpoint and model
-- AI utility services including image analysis and automation pattern scanning
 - Firebase configuration and push notification integration support
 - Deployable frontend assets and blueprints included in the integration package
 
@@ -35,13 +33,7 @@ Oasira Business is a Home Assistant integration focused on security orchestratio
 
 ## Configuration Overview
 
-Initial setup uses your Oasira account and system information, then provisions integration data and services.
-
-AI configuration is managed through the integration config flow and supports:
-
-- Ollama base URL
-- Default model selection
-- Conversation and AI task subentry configuration
+Each Home Assistant instance is enrolled as a hub of an Oasira Care facility with a one-time enrollment code (one hub per instance).
 
 ## Service Coverage
 
@@ -50,7 +42,6 @@ The integration exposes service groups for:
 - Alarm and operations: clean_motion_files, create_event, cancel_alarm, get_alarm_status, confirm_pending_alarm, create_alert, update_entity
 - Labels and deployment: add_label_to_entity, deploy_latest_config, get_firebase_config
 - Timeline: record_video_clip, create_timeline_event, summarize_timeline_period
-- AI: change_config, analyze_image, scan_home_automation_patterns
 
 For full service schemas and fields, see custom_components/oasira_b2b/services.yaml.
 
@@ -58,7 +49,7 @@ For full service schemas and fields, see custom_components/oasira_b2b/services.y
 
 - Home Assistant with config flow support
 - Recorder integration enabled
-- Network access to Oasira and any configured Ollama endpoint
+- Network access to the Oasira Care API
 
 Python dependencies are declared in custom_components/oasira_b2b/manifest.json and installed by Home Assistant.
 
@@ -106,8 +97,8 @@ After adding the configuration, restart Home Assistant for changes to take effec
 
 ### Required Information
 
-- **Email**: Your Oasira account email
-- **Password**: Your Oasira account password
+- **API URL**: base URL of the Oasira Care API (without `/v1`)
+- **Enrollment code**: one-time code generated in Oasira Care (Facility → Hub Provisioning)
 
 ### Requirements
 

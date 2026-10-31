@@ -22,10 +22,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.httpx_client import get_async_client
 
-from .ai_const import DEFAULT_CONF_BASE_URL
 from .const import DOMAIN, NAME
 
 _LOGGER = logging.getLogger(__name__)
+
+DEFAULT_CONF_BASE_URL = "https://agent.oasira.ai"
 
 
 async def async_setup_entry(
