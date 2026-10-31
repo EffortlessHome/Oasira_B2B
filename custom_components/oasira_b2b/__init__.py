@@ -64,6 +64,8 @@ from .const import (
     DOMAIN,
     LABELS,
     NAME,
+    OASIRA_SUPERVISOR_ADDON_REPOSITORY,
+    OASIRA_SUPERVISOR_ADDON_SLUG,
     name_internal,
 )
 
@@ -644,6 +646,139 @@ async def handle_deploy_latest_config(call: ServiceCall) -> None:
     hass = HASSComponent.get_hass()
 
     await deploy_latest_config(hass)
+
+
+async def async_add_oasira_addon_repository(
+    hass: HomeAssistant,
+) -> None:
+    """Set up the Oasira add-on repository."""
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
+    if not supervisor_token:
+        raise HomeAssistantError(
+            "Cannot add the Oasira add-on repository: "
+            "the Supervisor token is unavailable."
+        )
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            "http://supervisor/store/repositories",
+            headers={"Authorization": f"Bearer {supervisor_token}"},
+            json={"repository": OASIRA_SUPERVISOR_ADDON_REPOSITORY},
+        ) as response:
+            if response.status < 200 or response.status >= 300:
+                _LOGGER.error(
+                    "Supervisor rejected the Oasira add-on repository "
+                    "with HTTP %s",
+                    response.status,
+                )
+                raise HomeAssistantError(
+                    "Supervisor could not add the Oasira add-on repository "
+                    f"(HTTP {response.status})."
+                )
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        _LOGGER.exception("Failed to contact Supervisor to add the add-on repository")
+        raise HomeAssistantError(
+            "Unable to contact Supervisor to add the Oasira add-on repository."
+        ) from err
+
+    _LOGGER.info("Added Oasira add-on repository to Supervisor")
+    notify_create(
+        hass,
+        "Oasira add-on repository added. Press the integration's Install "
+        "Oasira Add-on button to start installation.",
+        title="Oasira",
+        notification_id="oasira_addon_repository_added",
+    )
+
+
+async def async_install_oasira_addon(
+    hass: HomeAssistant,
+) -> None:
+    """Start installing the Oasira add-on through Supervisor."""
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
+    if not supervisor_token:
+        raise HomeAssistantError(
+            "Cannot install the Oasira add-on: "
+            "the Supervisor token is unavailable."
+        )
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            f"http://supervisor/store/addons/{OASIRA_SUPERVISOR_ADDON_SLUG}/install",
+            headers={"Authorization": f"Bearer {supervisor_token}"},
+            json={"background": True},
+        ) as response:
+            if response.status < 200 or response.status >= 300:
+                _LOGGER.error(
+                    "Supervisor rejected the Oasira add-on installation "
+                    "with HTTP %s. Ensure the Oasira add-on repository "
+                    "has been added first.",
+                    response.status,
+                )
+                raise HomeAssistantError(
+                    "Supervisor could not start installing the Oasira "
+                    "add-on (HTTP "
+                    f"{response.status}). Add the Oasira add-on repository "
+                    "first if it has not been added."
+                )
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        _LOGGER.exception("Failed to contact Supervisor to install the add-on")
+        raise HomeAssistantError(
+            "Unable to contact Supervisor to install the Oasira add-on."
+        ) from err
+
+    _LOGGER.info("Started Oasira add-on installation through Supervisor")
+    notify_create(
+        hass,
+        "Supervisor has started installing the Oasira add-on. Check "
+        "Settings > Add-ons for installation progress and configuration.",
+        title="Oasira",
+        notification_id="oasira_addon_installation_started",
+    )
+
+
+async def async_control_oasira_addon(
+    hass: HomeAssistant, action: str
+) -> None:
+    """Start or stop the Oasira add-on through Supervisor."""
+    if action not in {"start", "stop"}:
+        raise ValueError(f"Unsupported Oasira add-on action: {action}")
+
+    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
+    if not supervisor_token:
+        raise HomeAssistantError(
+            f"Cannot {action} the Oasira add-on: "
+            "the Supervisor token is unavailable."
+        )
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.post(
+            f"http://supervisor/addons/{OASIRA_SUPERVISOR_ADDON_SLUG}/{action}",
+            headers={"Authorization": f"Bearer {supervisor_token}"},
+        ) as response:
+            if response.status < 200 or response.status >= 300:
+                _LOGGER.error(
+                    "Supervisor rejected the Oasira add-on %s request "
+                    "with HTTP %s",
+                    action,
+                    response.status,
+                )
+                raise HomeAssistantError(
+                    f"Supervisor could not {action} the Oasira "
+                    f"add-on (HTTP {response.status})."
+                )
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        _LOGGER.exception(
+            "Failed to contact Supervisor to %s the Oasira add-on", action
+        )
+        raise HomeAssistantError(
+            f"Unable to contact Supervisor to {action} the Oasira add-on."
+        ) from err
+
+    _LOGGER.info("Requested Supervisor to %s the Oasira add-on", action)
 
 
 

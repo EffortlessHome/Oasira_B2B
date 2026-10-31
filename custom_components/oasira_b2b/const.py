@@ -25,6 +25,10 @@ NAME = "Oasira"
 DOMAIN="oasira_b2b"
 name_internal = "oasira"
 
+# Supervisor Addon constants
+OASIRA_SUPERVISOR_ADDON_REPOSITORY = "oasira-addon-repository"
+OASIRA_SUPERVISOR_ADDON_SLUG = "oasira-addon"
+
 # API Base URLs
 SECURITY_API = "https://securityapi.effortlesshome.co/"
 CUSTOMER_API = "https://cust.effortlesshome.co/"
