@@ -54,6 +54,7 @@ ATTR_TITLE = "title"
 ATTR_DATA = "data"
 
 from .area_manager import AreaManager
+from .backup import async_notify_backup_listeners
 from .care_stream import CONF_CARE_API_KEY, CONF_CARE_API_URL, CareStreamer
 from .auto_area import AutoArea
 
@@ -256,6 +257,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         hass.data[DOMAIN]["care_streamer"] = streamer
         await streamer.async_start()
+        hass.data[DOMAIN]["care_backup_credentials"] = (care_api_url, care_api_key)
+        async_notify_backup_listeners(hass)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     register_services(hass)
@@ -368,6 +371,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
 
     is_node = bool(entry.data.get("api_key"))
+
+    if hass.data.get(DOMAIN, {}).pop("care_backup_credentials", None) is not None:
+        async_notify_backup_listeners(hass)
 
     streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
     if streamer is not None:

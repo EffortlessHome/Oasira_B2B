@@ -100,9 +100,13 @@ After adding the configuration, restart Home Assistant for changes to take effec
 - **API URL**: base URL of the Oasira Care API (without `/v1`)
 - **Enrollment code**: one-time code generated in Oasira Care (Facility → Hub Provisioning)
 
+### Configuration Backups
+
+Once the node is enrolled (or the Care API URL/key options are set), **Oasira Care** appears as a backup location in Home Assistant's native backup feature (Settings → System → Backups). Select it as a location in the automatic backup settings, or when creating a manual backup. Home Assistant creates, encrypts, schedules and prunes the backups (retention is configured in HA), and restoring from an Oasira Care backup uses HA's normal restore flow. Backups are stored in the Care API, which limits uploads to 100 MB; larger backups fail with an error.
+
 ### Requirements
 
-- Home Assistant **2024.1+**
+- Home Assistant **2025.1+**
 - `recorder` component enabled
 - Internet connection for cloud features
 
