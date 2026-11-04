@@ -30,6 +30,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up entities."""
     HASSComponent.set_hass(hass)
+    hass.data.setdefault(DOMAIN, {})["in_bed_add_entities"] = async_add_entities
 
     async_add_entities([SleepingSensor()])
     async_add_entities([SomeoneHomeSensor()])

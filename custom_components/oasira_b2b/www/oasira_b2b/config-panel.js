@@ -10,7 +10,7 @@ class ConfigPanel extends HTMLElement {
     return this._hass;
   }
 
-  async connectedCallback() {
+  connectedCallback() {
     this.innerHTML = `
       <style>
         :host {
@@ -275,7 +275,7 @@ class ConfigPanel extends HTMLElement {
       <div class="dashboard-container">
         <div class="header-section">
           <div class="profile-info">
-            <div id="current-user">
+            <div>
               <img src="/local/oasira_b2b/user.png" alt="Profile">
               <h2 id="user-name">Loading...</h2>
               <p id="ha-url">Connecting...</p>
@@ -310,7 +310,7 @@ class ConfigPanel extends HTMLElement {
           ${this._tile("/oasira-label-panel", "mdi:label", "Set Labels")}
         </div>
 
-        <div id="matter-section" class="matter-section">
+        <div class="matter-section">
           <h2><ha-icon icon="mdi:hub"></ha-icon> Matter Bridges</h2>
           <div id="bridge-list" class="bridge-grid">
              <p>Loading Matter bridges...</p>
@@ -388,74 +388,107 @@ class ConfigPanel extends HTMLElement {
       const bridges = await response.json();
 
       if (bridges && bridges.length > 0) {
-        if (list) list.innerHTML = bridges.map(b => this._renderBridgeCard(b)).join("");
+        if (list) {
+          const cards = document.createDocumentFragment();
+          for (const bridge of bridges) {
+            cards.append(this._renderBridgeCard(bridge));
+          }
+          list.replaceChildren(cards);
+        }
       } else {
-        if (list) list.innerHTML = "<p>No Matter bridges found.</p>";
+        if (list) {
+          const message = document.createElement("p");
+          message.textContent = "No Matter bridges found.";
+          list.replaceChildren(message);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch Matter bridges:", err);
-      if (list) list.innerHTML = "<p style='color: var(--error-color, #f44336);'>Matter Hub unreachable or API failed.</p>";
+      if (list) {
+        const message = document.createElement("p");
+        message.style.color = "var(--error-color, #f44336)";
+        message.textContent = "Matter Hub unreachable or API failed.";
+        list.replaceChildren(message);
+      }
     }
   }
 
   _renderBridgeCard(bridge) {
     const comm = bridge.commissioning || {};
     const info = bridge.basicInformation || {};
+    const createElement = (tagName, className, text) => {
+      const element = document.createElement(tagName);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    };
 
-    // Generate a unique id for the factory reset button
-    const resetBtnId = `factory-reset-btn-${bridge.id}`;
+    const card = createElement("div", "bridge-card");
+    const header = createElement("div", "bridge-header");
+    header.append(
+      createElement("h3", "", bridge.name || "Matter Bridge"),
+      createElement(
+        "span",
+        `status-badge status-${bridge.status === "running" ? "running" : "stopped"}`,
+        String(bridge.status)
+      )
+    );
+    card.append(header);
 
-    // Attach the event listener after rendering
-    setTimeout(() => {
-      const btn = this.querySelector(`#${resetBtnId}`);
-      if (btn) {
-        btn.onclick = async () => {
-          if (!confirm("Factory reset this bridge? This cannot be undone.")) return;
-          btn.disabled = true;
-          btn.textContent = "Resetting...";
-          try {
-            const hostname = window.location.hostname;
-            const url = `http://${hostname}:8482/api/matter/bridges/${bridge.id}/actions/factory-reset`;
-            const resp = await fetch(url, { method: "GET" });
-            if (!resp.ok) throw new Error("Factory reset failed");
-            alert("Bridge factory reset successfully.");
-          } catch (err) {
-            alert("Factory reset failed: " + (err.message || err));
-          } finally {
-            btn.disabled = false;
-            btn.textContent = "Factory Reset";
-          }
-        };
+    const pairingInfo = createElement("div", "pairing-info");
+    pairingInfo.append(
+      createElement("span", "", "Manual Pairing Code"),
+      createElement("div", "pairing-code", comm.manualPairingCode || "N/A")
+    );
+
+    const pairingDetails = createElement("div");
+    pairingDetails.style.marginTop = "8px";
+    const passcode = createElement("span", "", "Passcode: ");
+    passcode.append(createElement("strong", "", comm.passcode || "N/A"));
+    const discriminator = createElement("span", "", "Discriminator: ");
+    discriminator.style.marginLeft = "12px";
+    discriminator.append(createElement("strong", "", comm.discriminator || "N/A"));
+    pairingDetails.append(passcode, discriminator);
+    pairingInfo.append(pairingDetails);
+    card.append(pairingInfo);
+
+    const details = createElement("div");
+    details.style.fontSize = "0.85rem";
+    details.style.color = "var(--secondary-text-color)";
+    const deviceCount = createElement("strong", "", bridge.deviceCount || 0);
+    details.append("Devices: ", deviceCount, document.createElement("br"));
+    details.append(
+      "Vendor: ",
+      info.vendorName || "Unknown",
+      " | Version: ",
+      info.softwareVersion || "N/A"
+    );
+    card.append(details);
+
+    const resetButton = createElement("button", "btn btn-outline", "Factory Reset");
+    resetButton.style.marginTop = "10px";
+    resetButton.style.alignSelf = "flex-start";
+    resetButton.addEventListener("click", async () => {
+      if (!confirm("Factory reset this bridge? This cannot be undone.")) return;
+      resetButton.disabled = true;
+      resetButton.textContent = "Resetting...";
+      try {
+        const hostname = window.location.hostname;
+        const bridgeId = encodeURIComponent(String(bridge.id));
+        const url = `http://${hostname}:8482/api/matter/bridges/${bridgeId}/actions/factory-reset`;
+        const resp = await fetch(url, { method: "GET" });
+        if (!resp.ok) throw new Error("Factory reset failed");
+        alert("Bridge factory reset successfully.");
+      } catch (err) {
+        alert("Factory reset failed: " + (err.message || err));
+      } finally {
+        resetButton.disabled = false;
+        resetButton.textContent = "Factory Reset";
       }
-    }, 0);
+    });
+    card.append(resetButton);
 
-    return `
-      <div class="bridge-card">
-        <div class="bridge-header">
-          <h3>${bridge.name || "Matter Bridge"}</h3>
-          <span class="status-badge status-${bridge.status === "running" ? "running" : "stopped"}">
-            ${bridge.status}
-          </span>
-        </div>
-        
-        <div class="pairing-info">
-          <span>Manual Pairing Code</span>
-          <div class="pairing-code">${comm.manualPairingCode || "N/A"}</div>
-          
-          <div style="margin-top: 8px;">
-            <span>Passcode: <strong>${comm.passcode || "N/A"}</strong></span>
-            <span style="margin-left: 12px;">Discriminator: <strong>${comm.discriminator || "N/A"}</strong></span>
-          </div>
-        </div>
-
-        <div style="font-size: 0.85rem; color: var(--secondary-text-color);">
-           Devices: <strong>${bridge.deviceCount || 0}</strong><br>
-           Vendor: ${info.vendorName || "Unknown"} | Version: ${info.softwareVersion || "N/A"}
-        </div>
-
-        <button id="${resetBtnId}" class="btn btn-outline" style="margin-top:10px;align-self:flex-start;">Factory Reset</button>
-      </div>
-    `;
+    return card;
   }
 }
 

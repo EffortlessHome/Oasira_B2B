@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..const import CUSTOMER_API, SECURITY_API, FIREBASE_AUTH_URL, FIREBASE_TOKEN_URL
 
 _LOGGER = logging.getLogger(__name__)
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 
 class OasiraAPIError(Exception):
@@ -43,7 +44,7 @@ class OasiraAPIClient:
     async def __aenter__(self):
         """Async context manager entry."""
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(timeout=REQUEST_TIMEOUT)
             self._owned_session = True
         return self
 
@@ -145,38 +146,36 @@ class OasiraAPIClient:
 
         try:
             async with self._session.request(
-                method, url, headers=headers, json=data or {}
+                method,
+                url,
+                headers=headers,
+                json=data or {},
+                timeout=REQUEST_TIMEOUT,
             ) as response:
-                _LOGGER.debug("API request: %s %s", method, url)
-                _LOGGER.debug("API request headers: %s", headers)
-                _LOGGER.debug("API response status: %s", response.status)
+
                 
                 content = await response.text()
-                _LOGGER.debug("API response content (first 500 chars): %s", content[:500])
+
                 
                 if response.status != 200:
-                    _LOGGER.error(
-                        "API request failed with status %s: %s",
-                        response.status,
-                        content,
-                    )
-                    raise OasiraAPIError(
-                        f"API request failed with status {response.status}: {content}"
-                    )
+                    _LOGGER.error("API request failed with status %s", response.status)
+                    raise OasiraAPIError(f"API request failed with status {response.status}")
 
                 if not content:
-                    _LOGGER.error("Empty response from API: %s", url)
+                    _LOGGER.error("Empty response from API")
                     raise OasiraAPIError("Empty response from API")
 
                 try:
                     return json.loads(content)
                 except json.JSONDecodeError as e:
-                    _LOGGER.error("Failed to parse JSON response from %s: %s", url, content[:200])
+                    _LOGGER.error("Failed to parse JSON response from API")
                     raise OasiraAPIError(f"Invalid JSON response: {e}") from e
 
         except aiohttp.ClientError as e:
-            _LOGGER.error("Network error during API request: %s", e)
-            raise OasiraAPIError(f"Network error: {e}") from e
+            _LOGGER.error(
+                "Network error during API request (%s)", type(e).__name__
+            )
+            raise OasiraAPIError("Network error during API request") from e
 
     # ==================== Customer API Methods ====================
 
@@ -786,11 +785,6 @@ class OasiraAPIClient:
         headers = {
             **self._get_common_headers(),
         }
-        # Some backend deployments require an Authorization header to exist,
-        # even during bootstrap before the user has an ID token.
-        if "Authorization" not in headers:
-            headers["Authorization"] = "Bearer bootstrap"
-
         response = await self._make_request("GET", url, headers)
         
         if "results" not in response or not response["results"]:
@@ -1083,18 +1077,27 @@ class OasiraAPIClient:
             raise OasiraAPIError("Session not initialized. Use async context manager.")
         
         try:
-            async with self._session.post(url, json=data, headers=headers) as response:
+            async with self._session.post(
+                url, json=data, headers=headers, timeout=REQUEST_TIMEOUT
+            ) as response:
                 content = await response.text()
                 
                 if response.status not in [200, 201]:
-                    _LOGGER.error("HA device tracker update failed: %s", content)
-                    raise OasiraAPIError(f"HA device tracker update failed: {content}")
+                    _LOGGER.error(
+                        "HA device tracker update failed with status %s", response.status
+                    )
+                    raise OasiraAPIError(
+                        f"HA device tracker update failed with status {response.status}"
+                    )
                 
                 return json.loads(content) if content else {"status": "success"}
                 
         except aiohttp.ClientError as e:
-            _LOGGER.error("Network error during HA device tracker update: %s", e)
-            raise OasiraAPIError(f"Network error: {e}") from e
+            _LOGGER.error(
+                "Network error during HA device tracker update (%s)",
+                type(e).__name__,
+            )
+            raise OasiraAPIError("Network error during HA device tracker update") from e
 
     async def send_ha_notification(self, fcm_token: str, notification_data: Dict[str, Any], oauth_access_token: str) -> Dict[str, Any]:
         """Send push notification via Firebase Cloud Messaging for Home Assistant.
@@ -1124,18 +1127,24 @@ class OasiraAPIClient:
             raise OasiraAPIError("Session not initialized. Use async context manager.")
         
         try:
-            async with self._session.post(url, json=message, headers=headers) as response:
+            async with self._session.post(
+                url, json=message, headers=headers, timeout=REQUEST_TIMEOUT
+            ) as response:
                 content = await response.text()
                 
                 if response.status != 200:
-                    _LOGGER.error("FCM notification failed: %s", content)
-                    raise OasiraAPIError(f"FCM notification failed: {content}")
+                    _LOGGER.error(
+                        "FCM notification failed with status %s", response.status
+                    )
+                    raise OasiraAPIError(
+                        f"FCM notification failed with status {response.status}"
+                    )
                 
                 return json.loads(content)
                 
         except aiohttp.ClientError as e:
-            _LOGGER.error("Network error during FCM notification: %s", e)
-            raise OasiraAPIError(f"Network error: {e}") from e
+            _LOGGER.error("Network error during FCM notification (%s)", type(e).__name__)
+            raise OasiraAPIError("Network error during FCM notification") from e
 
     # ==================== Utility Methods ====================
 
@@ -1155,7 +1164,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Creating event for alarm %s with data: %s", alarm_id, event_data)
+        _LOGGER.info("Creating security event")
         return await self._make_request("POST", url, headers, event_data)
 
     async def create_alert(self, alert_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1173,7 +1182,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Creating alert with data: %s", alert_data)
+        _LOGGER.info("Creating alert")
         return await self._make_request("POST", url, headers, alert_data)
 
     async def cancel_alarm(self, alarm_id: str) -> Dict[str, Any]:
@@ -1191,7 +1200,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Cancelling alarm %s for system %s", alarm_id, self.system_id)
+        _LOGGER.info("Cancelling alarm")
         return await self._make_request("POST", url, headers)
 
     async def get_alarm_status(self, alarm_id: str) -> Dict[str, Any]:
@@ -1209,7 +1218,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.debug("Getting alarm status for system %s", self.system_id)
+        _LOGGER.debug("Getting alarm status")
         return await self._make_request("POST", url, headers)
 
     async def confirm_pending_alarm(self) -> Dict[str, Any]:
@@ -1224,7 +1233,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Confirming pending alarm for system %s", self.system_id)
+        _LOGGER.info("Confirming pending alarm")
         return await self._make_request("POST", url, headers)
 
     async def create_security_alarm(self, alarm_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1242,7 +1251,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Creating security alarm with data: %s", alarm_data)
+        _LOGGER.info("Creating security alarm")
         return await self._make_request("POST", url, headers, alarm_data)
 
     async def create_monitoring_alarm(self, alarm_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1260,7 +1269,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Creating monitoring alarm with data: %s", alarm_data)
+        _LOGGER.info("Creating monitoring alarm")
         return await self._make_request("POST", url, headers, alarm_data)
 
     async def create_medical_alarm(self, alarm_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1278,7 +1287,7 @@ class OasiraAPIClient:
             "eh_system_id": self.system_id,
         }
 
-        _LOGGER.info("Creating medical alarm with data: %s", alarm_data)
+        _LOGGER.info("Creating medical alarm")
         return await self._make_request("POST", url, headers, alarm_data)
 
     # ==================== Firebase Authentication ====================
@@ -1388,7 +1397,7 @@ class OasiraAPIClient:
         Returns:
             A dictionary containing the agent's response text and metadata.
         """
-        _LOGGER.info(f"Agent conversation started for Home ID: {home_id} with input: {user_input}")
+        _LOGGER.info("Agent conversation started")
         
         # --- Mock Implementation for API Integration Testing ---
         # In a real scenario, this would call a dedicated /agent/start_conversation endpoint.
@@ -1418,4 +1427,3 @@ class OasiraAPIClient:
                 "text": f"Understood. I am processing your request: '{user_input}'. How else may I assist you?",
                 "source": "direct_response"
             }
-

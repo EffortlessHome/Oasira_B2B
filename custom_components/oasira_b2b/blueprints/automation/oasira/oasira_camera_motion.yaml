@@ -70,8 +70,6 @@ variables:
 
   clip_access_file_path: /config/www/oasira/{{ camera_name }}/{{ date }} {{ time }}.mp4
 
-  timelineentry: "{{ notification_title }} [{{ snapshot_access_file_path_local }}][{{ clip_access_file_path }}]"
-
   additional_actions: !input additional_actions
 
 action:
@@ -89,12 +87,6 @@ action:
       filename: "{{ clip_access_file_path }}"
       duration: 5
 
-  - service: oasira_b2b.create_timeline_event
-    continue_on_error: true
-    data:
-      entity_id: !input camera
-      entity_name: "{{ camera_name }}"
-      event_type: "{{ timelineentry }}"
 
   - condition: state
     entity_id: switch.motion_notifications

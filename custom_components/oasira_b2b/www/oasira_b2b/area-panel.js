@@ -227,7 +227,7 @@ class AreaPanel extends LitElement {
           const entityId = evt.item.dataset.entity;
           const newAreaId = area.area_id === "unknown" ? null : area.area_id;
 
-          this.hass.callService("Oasira", "update_entity", {
+          this.hass.callService("oasira_b2b", "update_entity", {
             entity_id: entityId,
             area_id: newAreaId,
           });
@@ -292,4 +292,4 @@ class AreaPanel extends LitElement {
   }
 }
 
-customElements.define("Oasira-area-panel", AreaPanel);
+customElements.define("oasira-area-panel", AreaPanel);

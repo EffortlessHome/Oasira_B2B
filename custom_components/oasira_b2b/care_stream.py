@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import logging
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from aiohttp import ClientError, ClientTimeout
 from homeassistant.const import EVENT_STATE_CHANGED
@@ -32,6 +33,24 @@ MAX_QUEUED_ALERTS = 500
 REQUEST_TIMEOUT = ClientTimeout(total=15)
 
 IGNORED_STATES = {"unknown", ""}
+
+
+def is_secure_care_api_url(url: str) -> bool:
+    """Return whether a Care API base URL uses HTTPS without embedded credentials."""
+    try:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.query
+            and not parsed.fragment
+            and (parsed.port is None or 1 <= parsed.port <= 65535)
+        )
+    except ValueError:
+        return False
+
 
 # binary_sensor device_class -> (alert type, severity) raised while the sensor is "on"
 BINARY_ALERT_CLASSES: dict[str, tuple[str, str]] = {
@@ -135,7 +154,7 @@ class CareStreamer:
             if alert := build_alert(state, self._location(state.entity_id)):
                 self._enqueue_alert(alert)
         self._schedule_flush()
-        _LOGGER.info("Streaming alerts and telemetry to %s", self._base_url)
+        _LOGGER.info("Care API alert and telemetry streaming started")
 
     async def async_stop(self) -> None:
         """Stop streaming and make a final attempt to deliver what is queued."""

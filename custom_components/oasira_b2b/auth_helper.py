@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any, Callable, Coroutine, TypeVar, Awaitable
 from functools import wraps
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .oasira import OasiraAPIClient, OasiraAPIError
 from .const import DOMAIN
@@ -56,7 +57,9 @@ async def _refresh_id_token(hass) -> bool:
         return False
 
     try:
-        async with OasiraAPIClient() as api_client:
+        async with OasiraAPIClient(
+            session=async_get_clientsession(hass)
+        ) as api_client:
             result = await api_client.firebase_refresh_token(refresh_token)
 
         new_id_token = result.get("idToken")
@@ -145,7 +148,11 @@ def with_token_refresh(
     Usage:
         @with_token_refresh
         async def my_api_call(hass, system_id, id_token):
-            async with OasiraAPIClient(system_id=system_id, id_token=id_token) as client:
+            async with OasiraAPIClient(
+                system_id=system_id,
+                id_token=id_token,
+                session=async_get_clientsession(hass),
+            ) as client:
                 return await client.some_method()
     """
 

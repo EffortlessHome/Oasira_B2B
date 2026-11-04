@@ -83,7 +83,6 @@ variables:
 
   additional_actions: !input additional_actions
 
-  timelineentry: "{{ notification_title }} [{{ clip_access_file_path }}]"
 
 
 action:
@@ -96,13 +95,6 @@ action:
       filename: "{{ snapshot_create_file_path }}"
     target:
       entity_id: !input camera
-
-  - service: oasira_b2b.create_timeline_event
-    continue_on_error: true
-    data:
-      entity_id: !input camera
-      entity_name: "{{ camera_name }}"
-      event_type: "{{ timelineentry }}"
 
 
   - condition: state

@@ -23,7 +23,7 @@
       }
     },
     "error": {
-      "invalid_url": "Enter a full URL including the http or https scheme",
+      "invalid_url": "Enter a valid HTTPS URL",
       "invalid_code": "The enrollment code is invalid, expired or already used.",
       "cannot_connect": "Unable to reach the Oasira Care API. Check the URL and network.",
       "unknown": "An unexpected error occurred. Please try again later."
@@ -49,17 +49,13 @@
     },
     "error": {
       "care_api_incomplete": "Enter both the Care API URL and the ingest key, or leave both empty.",
-      "invalid_url": "URL must include the http or https scheme"
+      "invalid_url": "URL must be a valid HTTPS URL"
     }
   },
   "services": {
     "clean_motion_files": {
       "name": "Clean motion files",
       "description": "Clean motion files older than specified number of days"
-    },
-    "get_firebase_config": {
-      "name": "Get Firebase config",
-      "description": "Get Firebase configuration from Oasira for mobile app setup"
     },
     "add_label_to_entity": {
       "name": "Add label to entity",
@@ -73,14 +69,6 @@
       "name": "Confirm pending alarm",
       "description": "Confirm a pending Oasira alarm"
     },
-    "cancel_alarm": {
-      "name": "Cancel alarm",
-      "description": "Cancel an active Oasira alarm"
-    },
-    "get_alarm_status": {
-      "name": "Get alarm status",
-      "description": "Get the current Oasira alarm status"
-    },
     "update_entity": {
       "name": "Update entity",
       "description": "Update an entity in the entity registry with an area"
@@ -88,6 +76,10 @@
     "deploy_latest_config": {
       "name": "Deploy latest config",
       "description": "Deploy latest Oasira configuration files (themes, blueprints, cards)"
+    },
+    "set_in_bed_state": {
+      "name": "Set in-bed state",
+      "description": "Update the in-bed binary sensor for an area"
     },
     "create_event": {
       "name": "Create event",

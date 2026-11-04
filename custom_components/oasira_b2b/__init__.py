@@ -13,7 +13,7 @@ from os import path, walk
 from pathlib import Path
 import shutil
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import quote
 
 import aiohttp
@@ -32,6 +32,7 @@ from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.components.persistent_notification import create as notify_create
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import (
+    area_registry as ar,
     config_validation as cv,
     device_registry as dr,
     entity_registry as er,
@@ -54,7 +55,12 @@ ATTR_TITLE = "title"
 ATTR_DATA = "data"
 
 from .area_manager import AreaManager
-from .care_stream import CONF_CARE_API_KEY, CONF_CARE_API_URL, CareStreamer
+from .care_stream import (
+    CONF_CARE_API_KEY,
+    CONF_CARE_API_URL,
+    CareStreamer,
+    is_secure_care_api_url,
+)
 from .auto_area import AutoArea
 
 from .oasira import OasiraAPIClient, OasiraAPIError
@@ -74,8 +80,6 @@ from .deviceclassgroupsync import async_setup_devicegroup
 from .event import EventHandler
 from .MotionSensorGrouper import MotionSensorGrouper
 
-
-from .timeline_service import async_setup_services as async_setup_timeline_services
 
 try:
     # Older versions (pre-2025)
@@ -117,9 +121,6 @@ class HASSComponent:
         return cls.hass_instance
 
 
-    #except Exception as e:
-    #    _LOGGER.error(f"Failed to setup notification platform: {e}", exc_info=True)
-    #    return False
 
 
 ACCOUNT_PLATFORMS = [
@@ -128,7 +129,6 @@ ACCOUNT_PLATFORMS = [
     "sensor",
     "cover",
     "light",
-    "button",
     "stt",
 ]
 # Enrolled hubs keep every local entity; only the cloud-account voice platforms are skipped.
@@ -141,6 +141,26 @@ NODE_ACCOUNT_DEFAULTS = {
     "DaysHistoryToKeep": 30,
     "testmode": False,
 }
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate older account entries to the current config-entry version."""
+    if entry.version != 1:
+        _LOGGER.error(
+            "Cannot migrate Oasira config entry from unsupported version %s",
+            entry.version,
+        )
+        return False
+
+    data = dict(entry.data)
+    if "system_id" not in data and "systemid" in data:
+        data["system_id"] = data["systemid"]
+    if "customer_id" not in data and "customerid" in data:
+        data["customer_id"] = data["customerid"]
+
+    hass.config_entries.async_update_entry(entry, data=data, version=2)
+    _LOGGER.info("Migrated Oasira config entry to version 2")
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -184,12 +204,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         id_token = hass.data[DOMAIN].get("id_token")
         parsed_data = None
         plan_features = None
-        async with OasiraAPIClient(system_id=system_id, id_token=id_token) as api_client:
+        async with OasiraAPIClient(
+            system_id=system_id,
+            id_token=id_token,
+            session=async_get_clientsession(hass),
+        ) as api_client:
             async def _run_customer_system() -> Any:
                 _id_token = hass.data[DOMAIN].get("id_token")
                 if not _id_token:
                     raise OasiraAPIError("Missing id_token for customer/system lookup")
-                async with OasiraAPIClient(system_id=system_id, id_token=_id_token) as client:
+                async with OasiraAPIClient(
+                    system_id=system_id,
+                    id_token=_id_token,
+                    session=async_get_clientsession(hass),
+                ) as client:
                     return await client.get_customer_and_system()
 
             try:
@@ -248,6 +276,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         care_api_url = entry.options.get(CONF_CARE_API_URL)
         care_api_key = entry.options.get(CONF_CARE_API_KEY)
     if care_api_url and care_api_key:
+        if not is_secure_care_api_url(care_api_url):
+            raise HomeAssistantError(
+                "The Oasira Care API URL must use HTTPS before streaming can start."
+            )
         streamer = CareStreamer(
             hass,
             care_api_url,
@@ -258,8 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await streamer.async_start()
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    register_services(hass)
-    await async_setup_timeline_services(hass)
+    register_services(hass, entry)
 
     # Removed deploy_latest_config(hass) from initialization. Now triggered by button entity.
     label_registry = lr.async_get(hass)
@@ -285,8 +316,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await loaddevicegroups(None)
 
     # Listen for the 'homeassistant_started' event
-    hass.bus.async_listen_once(
-        EVENT_HOMEASSISTANT_STARTED, after_home_assistant_started
+    entry.async_on_unload(
+        hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED, after_home_assistant_started
+        )
     )
 
     # Start Firebase token refresh task (refresh every 50 minutes, tokens expire in 60 minutes)
@@ -314,15 +347,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 # Continue trying even if refresh fails
             except Exception as e:
                 _LOGGER.exception("Unexpected error refreshing Firebase token: %s", e)
-            finally:
-                # Wait 50 minutes before refreshing (tokens expire in 60 minutes)
-                await asyncio.sleep(50 * 60)
+            await asyncio.sleep(50 * 60)
 
     # Schedule the refresh task after setup completes to avoid blocking startup
-    async def schedule_refresh_task(*_):
-        hass.async_create_task(refresh_firebase_token())
+    def schedule_refresh_task(*_) -> None:
+        task = hass.async_create_task(
+            refresh_firebase_token(), "oasira_b2b Firebase token refresh"
+        )
+
+        def cancel_refresh_task() -> None:
+            task.cancel()
+
+        entry.async_on_unload(cancel_refresh_task)
+
     if not is_node:
-        hass.bus.async_listen_once("homeassistant_started", schedule_refresh_task)
+        entry.async_on_unload(
+            hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, schedule_refresh_task
+            )
+        )
 
     return True
 
@@ -369,13 +412,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     is_node = bool(entry.data.get("api_key"))
 
+    unloaded = await hass.config_entries.async_unload_platforms(
+        entry, NODE_PLATFORMS if is_node else ACCOUNT_PLATFORMS
+    )
+    if not unloaded:
+        return False
+
     streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
     if streamer is not None:
         await streamer.async_stop()
-
-    await hass.config_entries.async_unload_platforms(
-        entry, NODE_PLATFORMS if is_node else ACCOUNT_PLATFORMS
-    )
 
     return True
 
@@ -419,22 +464,25 @@ async def add_label_to_entity(call: ServiceCall) -> None:
 
 
 @callback
-def register_services(hass: HomeAssistant) -> None:
+def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register Oasira services."""
 
-    hass.services.async_register(DOMAIN, "clean_motion_files", clean_motion_files)
-
-    # Register our service with Home Assistant.
     hass.services.async_register(DOMAIN, "create_event", create_event)
-    hass.services.async_register(DOMAIN, "update_entity", update_entity)
-
     hass.services.async_register(DOMAIN, "create_alert", create_alert)
-
-    hass.services.async_register(
-        DOMAIN, "deploy_latest_config", handle_deploy_latest_config
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        "update_entity",
+        update_entity,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_id,
+                vol.Required("area_id"): vol.Any(cv.string, None),
+            }
+        ),
     )
-
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         "add_label_to_entity",
         add_label_to_entity,
@@ -442,6 +490,60 @@ def register_services(hass: HomeAssistant) -> None:
             {vol.Required("entity_id"): cv.entity_id, vol.Required("label"): cv.string}
         ),
     )
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        "clean_motion_files",
+        clean_motion_files,
+        schema=vol.Schema(
+            {vol.Optional("age", default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))}
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "confirm_pending_alarm",
+        confirm_pending_alarm,
+        schema=vol.Schema({vol.Optional("entity_id"): cv.entity_id}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_in_bed_state",
+        set_in_bed_state,
+        schema=vol.Schema(
+            {
+                vol.Required("area_id"): cv.string,
+                vol.Required("state"): bool,
+            }
+        ),
+    )
+    async_register_admin_service(
+        hass, DOMAIN, "deploy_latest_config", handle_deploy_latest_config
+    )
+
+    def _service_unloader(service_name: str) -> Callable[[], None]:
+        def _remove_service() -> None:
+            hass.services.async_remove(DOMAIN, service_name)
+
+        return _remove_service
+
+    for service in (
+        "add_label_to_entity",
+        "clean_motion_files",
+        "confirm_pending_alarm",
+        "create_alert",
+        "create_event",
+        "deploy_latest_config",
+        "set_in_bed_state",
+        "update_entity",
+    ):
+        entry.async_on_unload(_service_unloader(service))
+
+    def _clear_in_bed_entities() -> None:
+        domain_data = hass.data.get(DOMAIN, {})
+        domain_data.pop("in_bed_add_entities", None)
+        domain_data.pop("in_bed_entities", None)
+
+    entry.async_on_unload(_clear_in_bed_entities)
 
 
 async def update_entity(call):
@@ -449,10 +551,97 @@ async def update_entity(call):
     entity_id = call.data.get("entity_id")
     new_area = call.data.get("area_id")
 
-    hass = HASSComponent.get_hass()
+    hass = call.hass
     ent_reg = entity_registry.async_get(hass)
 
     ent_reg.async_update_entity(entity_id, area_id=new_area)
+
+
+async def set_in_bed_state(call: ServiceCall) -> None:
+    """Set the in-bed binary sensor for an area."""
+    hass = call.hass
+    area_id = call.data["area_id"]
+    if ar.async_get(hass).async_get_area(area_id) is None:
+        raise HomeAssistantError(f"Unknown area: {area_id}")
+
+    add_entities = hass.data.get(DOMAIN, {}).get("in_bed_add_entities")
+    if add_entities is None:
+        raise HomeAssistantError("The in-bed sensor platform is not available")
+
+    entities = hass.data[DOMAIN].setdefault("in_bed_entities", {})
+    sensor = entities.get(area_id)
+    if sensor is None:
+        from .binary_sensor import InBedSensor
+
+        sensor = InBedSensor(area_id)
+        sensor._attr_is_on = call.data["state"]
+        entities[area_id] = sensor
+        add_entities([sensor])
+        return
+
+    sensor.set_state(call.data["state"])
+
+
+async def confirm_pending_alarm(call: ServiceCall) -> None:
+    """Confirm a pending alarm through the Oasira API."""
+    hass = call.hass
+    system_id = hass.data.get(DOMAIN, {}).get("systemid")
+    if not system_id:
+        raise HomeAssistantError("Oasira account authentication is not configured")
+    if not await ensure_valid_id_token(hass):
+        raise HomeAssistantError("Could not obtain a valid Oasira API token")
+
+    async def _confirm() -> Any:
+        id_token = hass.data[DOMAIN].get("id_token")
+        if not id_token:
+            raise OasiraAPIError("Missing id_token for confirm_pending_alarm")
+        async with OasiraAPIClient(
+            system_id=system_id,
+            id_token=id_token,
+            session=async_get_clientsession(hass),
+        ) as client:
+            return await client.confirm_pending_alarm()
+
+    try:
+        await safe_api_call(hass, _confirm)
+    except OasiraAPIError as err:
+        _LOGGER.error("Failed to confirm pending alarm: %s", err)
+        raise HomeAssistantError("Failed to confirm pending alarm") from err
+
+
+def _clean_motion_files_sync(snapshots_dir: str, age_days: int) -> int:
+    """Delete regular snapshot files older than age_days without following symlinks."""
+    if not os.path.isdir(snapshots_dir):
+        return 0
+
+    cutoff = time.time() - age_days * 86400
+    deleted = 0
+    for root, _, files in os.walk(snapshots_dir, followlinks=False):
+        for name in files:
+            file_path = os.path.join(root, name)
+            try:
+                if os.path.islink(file_path):
+                    continue
+                if os.path.getmtime(file_path) < cutoff:
+                    os.remove(file_path)
+                    deleted += 1
+            except OSError:
+                _LOGGER.warning("Unable to remove an expired snapshot file")
+    return deleted
+
+
+async def clean_motion_files(call: ServiceCall) -> None:
+    """Delete old snapshot files outside the event loop."""
+    age_days = call.data.get("age", 30)
+    deleted = await call.hass.async_add_executor_job(
+        _clean_motion_files_sync, "/media/snapshots", age_days
+    )
+    _LOGGER.info("Removed %s expired snapshot files", deleted)
+
+
+async def handle_deploy_latest_config(call: ServiceCall) -> None:
+    """Deploy the packaged themes, blueprints, and frontend assets."""
+    await deploy_latest_config(call.hass)
 
 
 async def loaddevicegroups(calldata) -> None:
@@ -463,8 +652,6 @@ async def loaddevicegroups(calldata) -> None:
 
 async def create_event(call: ServiceCall) -> None:
     """Create event."""
-    _LOGGER.info("create event calldata =%s", call.data)
-
     hass = HASSComponent.get_hass()
 
     entity_id = call.data.get("entity_id")
@@ -490,7 +677,6 @@ async def create_event(call: ServiceCall) -> None:
 
             if alarmstatus == "ACTIVE":
                 alarmid = alarmstate
-                _LOGGER.info("alarm id =%s", alarmid)
 
                 # Call the API to create event
                 systemid = hass.data[DOMAIN].get("systemid")
@@ -500,8 +686,6 @@ async def create_event(call: ServiceCall) -> None:
                     "sensor_device_class": sensor_device_class,
                     "sensor_device_name": sensor_device_name,
                 }
-
-                _LOGGER.info("Calling create event API with payload: %s", event_data)
 
                 if not await ensure_valid_id_token(hass):
                     _LOGGER.error("Cannot create event: invalid or expired id_token")
@@ -514,12 +698,12 @@ async def create_event(call: ServiceCall) -> None:
                     async with OasiraAPIClient(
                         system_id=systemid,
                         id_token=id_token,
+                        session=async_get_clientsession(hass),
                     ) as api_client:
                         return await api_client.create_event(alarmid, event_data)
 
                 try:
                     result = await safe_api_call(hass, _run_create_event)
-                    _LOGGER.info("API response content: %s", result)
                     return result
                 except OasiraAPIError as e:
                     _LOGGER.error("Failed to create event: %s", e)
@@ -535,8 +719,6 @@ async def createevent(calldata) -> None:
 
 async def create_alert(call: ServiceCall) -> None:
     """Create alert."""
-    _LOGGER.info("create alert calldata =%s", call.data)
-
     hass = HASSComponent.get_hass()
     alert_type = call.data.get("alert_type")
     alert_description = call.data.get("alert_description")
@@ -558,8 +740,6 @@ async def create_alert(call: ServiceCall) -> None:
     systemid = hass.data[DOMAIN].get("systemid")
     id_token = hass.data[DOMAIN].get("id_token")
 
-    _LOGGER.info("Calling alert API with payload: %s", alert_data)
-
     if not await ensure_valid_id_token(hass):
         _LOGGER.error("Cannot create alert: invalid or expired id_token")
         return None
@@ -571,12 +751,12 @@ async def create_alert(call: ServiceCall) -> None:
         async with OasiraAPIClient(
             system_id=systemid,
             id_token=id_token,
+            session=async_get_clientsession(hass),
         ) as api_client:
             return await api_client.create_alert(alert_data)
 
     try:
         result = await safe_api_call(hass, _run_create_alert)
-        _LOGGER.info("API response content: %s", result)
         return result
     except OasiraAPIError as e:
         _LOGGER.error("Failed to create alert: %s", e)
@@ -587,199 +767,3 @@ async def create_alert(call: ServiceCall) -> None:
 async def createalert(calldata) -> None:
     """Create alert (deprecated name)."""
     await create_alert(calldata)
-
-
-def _clean_motion_files_sync(hass, age):
-    """Synchronous helper to delete old snapshots."""
-    snapshots_dir = "/media/snapshots"
-    if not os.path.exists(snapshots_dir):
-        _LOGGER.debug("Snapshots directory %s does not exist", snapshots_dir)
-        return
-
-    now = time.time()
-    seconds_old = int(age) * 86400
-    count = 0
-
-    try:
-        # Recursively walk through snapshots directory
-        for root, _, files in os.walk(snapshots_dir):
-            for name in files:
-                file_path = os.path.join(root, name)
-                try:
-                    file_mtime = os.path.getmtime(file_path)
-                    if now - file_mtime > seconds_old:
-                        os.remove(file_path)
-                        count += 1
-                except Exception as e:
-                    _LOGGER.error("Error deleting file %s: %s", file_path, e)
-
-        if count > 0:
-            _LOGGER.info("Successfully deleted %s old snapshots", count)
-        else:
-            _LOGGER.debug("No old snapshots found to delete")
-    except Exception as e:
-        _LOGGER.error("Error while cleaning snapshots: %s", e)
-
-
-async def clean_motion_files(call: ServiceCall) -> None:
-    """Delete snapshot files older than the specified number of days off the event loop."""
-    hass = call.hass
-    age = call.data.get("age", 30)
-
-    try:
-        age_int = int(age)
-    except (ValueError, TypeError):
-        _LOGGER.error("Invalid age value %s, using default 30 days", age)
-        age_int = 30
-
-    await hass.async_add_executor_job(_clean_motion_files_sync, hass, age_int)
-
-
-# Keep old name for backward compatibility
-async def cleanmotionfiles(calldata):
-    """Execute the command to delete old snapshots (deprecated name)."""
-    await clean_motion_files(calldata)
-
-
-async def handle_deploy_latest_config(call: ServiceCall) -> None:
-    """Handle the service call."""
-    hass = HASSComponent.get_hass()
-
-    await deploy_latest_config(hass)
-
-
-async def async_add_oasira_addon_repository(
-    hass: HomeAssistant,
-) -> None:
-    """Set up the Oasira add-on repository."""
-    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
-    if not supervisor_token:
-        raise HomeAssistantError(
-            "Cannot add the Oasira add-on repository: "
-            "the Supervisor token is unavailable."
-        )
-
-    session = async_get_clientsession(hass)
-    try:
-        async with session.post(
-            "http://supervisor/store/repositories",
-            headers={"Authorization": f"Bearer {supervisor_token}"},
-            json={"repository": OASIRA_SUPERVISOR_ADDON_REPOSITORY},
-        ) as response:
-            if response.status < 200 or response.status >= 300:
-                _LOGGER.error(
-                    "Supervisor rejected the Oasira add-on repository "
-                    "with HTTP %s",
-                    response.status,
-                )
-                raise HomeAssistantError(
-                    "Supervisor could not add the Oasira add-on repository "
-                    f"(HTTP {response.status})."
-                )
-    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-        _LOGGER.exception("Failed to contact Supervisor to add the add-on repository")
-        raise HomeAssistantError(
-            "Unable to contact Supervisor to add the Oasira add-on repository."
-        ) from err
-
-    _LOGGER.info("Added Oasira add-on repository to Supervisor")
-    notify_create(
-        hass,
-        "Oasira add-on repository added. Press the integration's Install "
-        "Oasira Add-on button to start installation.",
-        title="Oasira",
-        notification_id="oasira_addon_repository_added",
-    )
-
-
-async def async_install_oasira_addon(
-    hass: HomeAssistant,
-) -> None:
-    """Start installing the Oasira add-on through Supervisor."""
-    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
-    if not supervisor_token:
-        raise HomeAssistantError(
-            "Cannot install the Oasira add-on: "
-            "the Supervisor token is unavailable."
-        )
-
-    session = async_get_clientsession(hass)
-    try:
-        async with session.post(
-            f"http://supervisor/store/addons/{OASIRA_SUPERVISOR_ADDON_SLUG}/install",
-            headers={"Authorization": f"Bearer {supervisor_token}"},
-            json={"background": True},
-        ) as response:
-            if response.status < 200 or response.status >= 300:
-                _LOGGER.error(
-                    "Supervisor rejected the Oasira add-on installation "
-                    "with HTTP %s. Ensure the Oasira add-on repository "
-                    "has been added first.",
-                    response.status,
-                )
-                raise HomeAssistantError(
-                    "Supervisor could not start installing the Oasira "
-                    "add-on (HTTP "
-                    f"{response.status}). Add the Oasira add-on repository "
-                    "first if it has not been added."
-                )
-    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-        _LOGGER.exception("Failed to contact Supervisor to install the add-on")
-        raise HomeAssistantError(
-            "Unable to contact Supervisor to install the Oasira add-on."
-        ) from err
-
-    _LOGGER.info("Started Oasira add-on installation through Supervisor")
-    notify_create(
-        hass,
-        "Supervisor has started installing the Oasira add-on. Check "
-        "Settings > Add-ons for installation progress and configuration.",
-        title="Oasira",
-        notification_id="oasira_addon_installation_started",
-    )
-
-
-async def async_control_oasira_addon(
-    hass: HomeAssistant, action: str
-) -> None:
-    """Start or stop the Oasira add-on through Supervisor."""
-    if action not in {"start", "stop"}:
-        raise ValueError(f"Unsupported Oasira add-on action: {action}")
-
-    supervisor_token = os.environ.get("SUPERVISOR_TOKEN")
-    if not supervisor_token:
-        raise HomeAssistantError(
-            f"Cannot {action} the Oasira add-on: "
-            "the Supervisor token is unavailable."
-        )
-
-    session = async_get_clientsession(hass)
-    try:
-        async with session.post(
-            f"http://supervisor/addons/{OASIRA_SUPERVISOR_ADDON_SLUG}/{action}",
-            headers={"Authorization": f"Bearer {supervisor_token}"},
-        ) as response:
-            if response.status < 200 or response.status >= 300:
-                _LOGGER.error(
-                    "Supervisor rejected the Oasira add-on %s request "
-                    "with HTTP %s",
-                    action,
-                    response.status,
-                )
-                raise HomeAssistantError(
-                    f"Supervisor could not {action} the Oasira "
-                    f"add-on (HTTP {response.status})."
-                )
-    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-        _LOGGER.exception(
-            "Failed to contact Supervisor to %s the Oasira add-on", action
-        )
-        raise HomeAssistantError(
-            f"Unable to contact Supervisor to {action} the Oasira add-on."
-        ) from err
-
-    _LOGGER.info("Requested Supervisor to %s the Oasira add-on", action)
-
-
-
-

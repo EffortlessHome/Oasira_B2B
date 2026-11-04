@@ -22,6 +22,12 @@ blueprint:
           domain:
             - camera
           multiple: false
+
+    ai_task_entity:
+      name: AI Task Entity
+      selector:
+        entity:
+          domain: ai_task
   
     ai_prompt:
       name: Prompt to use with AI
@@ -55,10 +61,8 @@ variables:
   snapshot_create_file_path: "/media/snapshots/{{ camera_name }}/{{ now().strftime('%Y%m%d-%H%M%S') }}.jpg"
   # File path for notifications (served via /media/local/)
   snapshot_access_file_path: "{{ snapshot_create_file_path | replace('/media','/media/local') }}"
-  # Media source ID for AI task (convert path to media-source://)
   snapshot_media_source: "{{ snapshot_create_file_path | replace('/media','media-source://media_source/local') }}"
 
-  timelineentry: "{{ notification_title }} [{{ snapshot_access_file_path_local }}]"
 
   additional_actions: !input additional_actions
   prompt: !input ai_prompt
@@ -70,19 +74,20 @@ action:
     data:
       filename: "{{ snapshot_create_file_path }}"
 
-  - action: oasira_b2b.analyze_image
+  - action: ai_task.generate_data
     continue_on_error: true
     data:
-      image_path: "{{ snapshot_create_file_path }}"
-      prompt: Please describe this image in detail.
+      task_name: process
+      instructions: !input ai_prompt
+      entity_id: !input ai_task_entity
+      attachments:
+        media_content_id: "{{ snapshot_media_source }}"
+        media_content_type: image/jpeg
+        metadata:
+          title: "{{ snapshot_create_file_path }}"
+          thumbnail: "{{ snapshot_access_file_path }}"
+          media_class: image
     response_variable: responsevar
-
-  - service: oasira_b2b.create_timeline_event
-    continue_on_error: true
-    data:
-      entity_id: !input camera
-      entity_name: "{{ camera_name }}"
-      event_type: "{{ timelineentry }}"
 
   - condition: state
     entity_id: binary_sensor.motion_notification_sensor
@@ -92,7 +97,7 @@ action:
     continue_on_error: true
     data:
       title: !input notification_title
-      message: "{{ responsevar }}"
+      message: "{{ responsevar.data }}"
       data:
         video: "{{ snapshot_access_file_path }}"
         attachment:

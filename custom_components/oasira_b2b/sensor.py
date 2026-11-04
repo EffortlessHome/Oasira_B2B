@@ -25,7 +25,7 @@ from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
 
 
 from .const import DOMAIN, NAME
-from .timeline_sensor import TimelineSensor
+
 
 
 from .const import DOMAIN, NAME
@@ -49,7 +49,6 @@ async def async_setup_entry(
     async_add_entities([AverageTemperatureSensor()])
     async_add_entities([VirtualIlluminanceSensor()])
     async_add_entities([HighTemperatureTomorrowSensor()])
-    async_add_entities([TimelineSensor()])
 
     async_add_entities(
         [ConfigSensor("DaysHistoryToKeep", hass.data[DOMAIN]["DaysHistoryToKeep"])]

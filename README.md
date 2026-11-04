@@ -1,134 +1,136 @@
 # Oasira Business
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/EffortlessHome/Oasira_B2B)
+[![Version](https://img.shields.io/badge/version-1.2.6-blue.svg)](https://github.com/EffortlessHome/Oasira_B2B)
 
-Oasira Business is a Home Assistant integration focused on security orchestration, area-aware automation, and timeline events.
+Oasira Business connects a Home Assistant hub to an Oasira Care facility and
+provides local entities, automations, services, and optional Care API streaming.
 
-## Core Capabilities
+## Available functionality
 
-- Security and alarm coordination with services for pending confirmation, cancel, and status checks
-- Area-based automation features including presence workflows, sleep mode support, and entity area updates
-- Motion and monitoring automation support with entity grouping and routine orchestration
-- Alert and event logging services for operational visibility
-- Timeline event workflows for camera snapshots, video clips, person events, review/favorite updates, and cleanup
-- Firebase configuration and push notification integration support
-- Deployable frontend assets and blueprints included in the integration package
+- Enroll one Home Assistant hub per installation in an Oasira Care facility.
+- Provide Home Assistant entities for security, presence, doors, windows,
+  environmental monitoring, lights, covers, switches, and speech-to-text.
+  Speech-to-text is available for account-based entries; enrolled hub entries
+  omit that platform.
+- Create motion and security sensor groups at startup and maintain the
+  integration's standard labels.
+- Use the included automation blueprints for security, presence, lighting,
+  climate, cameras and AI-assisted notifications, calendars, appliances,
+  offline-device reports, and other household workflows.
+- Use optional Care API streaming when a Care API URL and facility ingest key
+  are configured.
+- Use the included frontend panels to assign entities to areas and labels, view
+  Matter Hub bridge status and pairing details, and access Home Assistant
+  account controls.
+
+The integration is cloud-connected (`cloud_polling`). Home Assistant
+automations and entity management run in Home Assistant; API-backed functions
+and optional Care streaming require network access to Oasira Care.
 
 ## Installation
 
-### HACS (Recommended)
+### HACS
 
-1. Open HACS in Home Assistant
-2. Add this repository as a custom repository
-3. Search for Oasira Business and install
-4. Restart Home Assistant
-5. Go to Settings > Devices and Services and add Oasira Business
+1. In HACS, add this repository as a custom repository.
+2. Find and install **Oasira Business**.
+3. Restart Home Assistant.
+4. Add **Oasira Business** from **Settings > Devices & services**.
 
-### Manual Installation
+### Manual
 
-1. Copy custom_components/oasira_b2b into your Home Assistant custom_components directory
-2. Restart Home Assistant
-3. Add Oasira Business from Settings > Devices and Services
+1. Copy `custom_components/oasira_b2b` into your Home Assistant
+   `custom_components` directory.
+2. Restart Home Assistant.
+3. Add **Oasira Business** from **Settings > Devices & services**.
 
-## Configuration Overview
+## Enroll a hub
 
-Each Home Assistant instance is enrolled as a hub of an Oasira Care facility with a one-time enrollment code (one hub per instance).
+The integration supports one configured hub per Home Assistant instance. In
+the integration setup form, provide:
 
-## Service Coverage
+- **API URL**: the HTTPS Oasira Care API base URL, with or without a trailing `/v1`.
+- **Enrollment code**: a one-time code issued from Oasira Care's facility hub
+  provisioning workflow.
+- **Hub name**: optional; defaults to the Home Assistant location name.
 
-The integration exposes service groups for:
+Enrollment associates the hub with the facility and provisions a hub API key.
+If the key is revoked or lost, re-enroll the hub with a new code from the same
+facility.
 
-- Alarm and operations: clean_motion_files, create_event, cancel_alarm, get_alarm_status, confirm_pending_alarm, create_alert, update_entity
-- Labels and deployment: add_label_to_entity, deploy_latest_config, get_firebase_config
-- Timeline: record_video_clip, create_timeline_event, summarize_timeline_period
+Account-based legacy entries can also configure an optional Care API URL and
+facility ingest key in the integration options. Configure both values or leave
+both blank.
 
-For full service schemas and fields, see custom_components/oasira_b2b/services.yaml.
+## Services
 
-## Requirements
+The `oasira_b2b` domain registers these services:
 
-- Home Assistant with config flow support
-- Recorder integration enabled
-- Network access to the Oasira Care API
+| Service | Purpose |
+| --- | --- |
+| `create_event` | Send an event for an eligible entity associated with an active Oasira alarm. |
+| `create_alert` | Create or update an alert with a type, description, and status. |
+| `update_entity` | Assign an entity to an area; used by the area panel. Administrator only. |
+| `add_label_to_entity` | Add a label to an entity; used by the label panel. Administrator only. |
 
-Python dependencies are declared in custom_components/oasira_b2b/manifest.json and installed by Home Assistant.
+Service field definitions are in
+[`custom_components/oasira_b2b/services.yaml`](custom_components/oasira_b2b/services.yaml).
 
-## Support
+## Frontend panels
 
-- Documentation: https://www.oasira.ai/
-- Issues: https://github.com/EffortlessHome/Oasira_b2b/issues
+The packaged panels are:
 
-## Configuration
+- `config-panel.js`: account controls and Matter Hub bridge information, with a
+  factory reset action for each bridge.
+- `area-panel.js`: filter entities by domain and drag entities between areas.
+- `label-panel.js`: filter entities by domain and drag entities to labels.
 
-### Initial Setup
-
-1. After installation, go to Configuration > Integrations
-2. Click the "+" button and search for "Oasira"
-3. Enter your Oasira account credentials
-4. Select the system you want to configure (if you have multiple systems)
-
-### Configuration.yaml changes
-
-Add the following configuration to your Home Assistant configuration.yaml file:
+To expose these as sidebar panels, make sure the files from
+`custom_components/oasira_b2b/www/oasira_b2b` are available under
+`/config/www/oasira_b2b`, then add the following to `configuration.yaml`:
 
 ```yaml
-homeassistant:
-  allowlist_external_dirs:
-    - /media
-    - /config/www/oasira_b2b
-
 panel_custom:
-  - name: Oasira-config-panel
+  - name: oasira-config-panel
     sidebar_title: Oasira Config
     sidebar_icon: mdi:alpha-e-box-outline
     url_path: oasira-config-panel
     module_url: /local/oasira_b2b/config-panel.js
 
-  - name: Oasira-area-panel
+  - name: oasira-area-panel
+    sidebar_title: Device Areas
+    sidebar_icon: mdi:home-group
     url_path: oasira-area-panel
     module_url: /local/oasira_b2b/area-panel.js
 
-  - name: Oasira-label-panel
+  - name: oasira-label-panel
+    sidebar_title: Entity Labels
+    sidebar_icon: mdi:label
     url_path: oasira-label-panel
     module_url: /local/oasira_b2b/label-panel.js
 ```
 
-After adding the configuration, restart Home Assistant for changes to take effect.
+Restart Home Assistant after changing the panel configuration. The Matter
+panel obtains bridge information from the Matter Hub API on the local network.
 
-### Required Information
+## Included resources
 
-- **API URL**: base URL of the Oasira Care API (without `/v1`)
-- **Enrollment code**: one-time code generated in Oasira Care (Facility → Hub Provisioning)
+- Automation blueprints: `custom_components/oasira_b2b/blueprints/`
+- Frontend assets: `custom_components/oasira_b2b/www/oasira_b2b/`
+- Theme: `custom_components/oasira_b2b/themes/`
 
-### Requirements
+## Requirements
 
-- Home Assistant **2024.1+**
-- `recorder` component enabled
-- Internet connection for cloud features
+- Home Assistant with config flow support
+- Recorder integration
+- Network access to Oasira Care for enrollment and cloud-backed features
+- Optional Care API URL and facility ingest key for Care API streaming
 
----
+Python requirements are declared in
+[`custom_components/oasira_b2b/manifest.json`](custom_components/oasira_b2b/manifest.json)
+and are installed by Home Assistant.
 
-## 🏗️ Architecture: Local-First by Design
+## Support
 
-```
-┌─────────────────────────────────────┐
-│           Your Home Network         │
-│                                     │
-│  ┌──────────────┐  ┌────────────┐  │
-│  │Home Assistant │──│Oasira│ │
-│  │   (local)     │  │ (local)    │  │
-│  └──────┬───────┘  └─────┬──────┘  │
-│         │                │         │
-│    Local Automations    Local UI    │
-│    Local Security       Local Data  │
-└─────────┬────────────────┬─────────┘
-          │   Encrypted    │
-          └───── Cloud ────┘
-        (remote access only)
-```
-
-✅ All automations run **locally** — no cloud dependency
-✅ Your data **stays on your hardware**
-✅ Cloud used **only** for secure remote access & optional monitoring
-
-
+- [Oasira documentation](https://www.oasira.ai/)
+- [Report an issue](https://github.com/EffortlessHome/Oasira_B2B/issues)

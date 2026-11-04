@@ -10,13 +10,6 @@ blueprint:
         entity:
           domain: calendar
 
-    person_input:
-      name: Person
-      description: The person to notify
-      selector:
-        entity:
-          domain: sensor
-
     offset_time:
       name: Offset Before Event
       description: Time before the event start to trigger the reminder (e.g., -00:15:00 for 15 minutes before)
@@ -47,7 +40,7 @@ trigger:
 condition: []
 
 action:
-  - service: oasira_b2b.notify_person_service
+  - service: notify.oasira
     continue_on_error: true
     data:
       target: !input person_input

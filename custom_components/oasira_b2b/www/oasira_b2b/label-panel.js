@@ -230,7 +230,7 @@ class LabelPanel extends LitElement {
           const entityId = evt.item.dataset.entity;
           const newLabelId = label.label_id;
 
-          this.hass.callService("Oasira", "add_label_to_entity", {
+          this.hass.callService("oasira_b2b", "add_label_to_entity", {
             entity_id: entityId,
             label: newLabelId,
           });

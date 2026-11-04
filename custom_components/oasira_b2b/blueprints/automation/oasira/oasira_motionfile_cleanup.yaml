@@ -26,11 +26,13 @@ blueprint:
 trigger:
   - platform: time
     at: !input execution_time
+variables:
+  age_sensor: !input age_sensor
 action:
   - service: oasira_b2b.clean_motion_files
     continue_on_error: true
     data:
-      age: !input age_sensor
+      age: "{{ states(age_sensor) | int(30) }}"
   - choose: []
     continue_on_error: true
     default: !input additional_actions
