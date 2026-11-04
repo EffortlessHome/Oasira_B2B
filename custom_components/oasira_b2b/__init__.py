@@ -55,11 +55,12 @@ ATTR_TITLE = "title"
 ATTR_DATA = "data"
 
 from .area_manager import AreaManager
+from .backup import async_notify_backup_listeners
 from .care_stream import (
     CONF_CARE_API_KEY,
     CONF_CARE_API_URL,
     CareStreamer,
-    is_secure_care_api_url,
+    is_valid_care_api_url,
 )
 from .auto_area import AutoArea
 
@@ -276,9 +277,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         care_api_url = entry.options.get(CONF_CARE_API_URL)
         care_api_key = entry.options.get(CONF_CARE_API_KEY)
     if care_api_url and care_api_key:
-        if not is_secure_care_api_url(care_api_url):
+        if not is_valid_care_api_url(care_api_url):
             raise HomeAssistantError(
-                "The Oasira Care API URL must use HTTPS before streaming can start."
+                "The Oasira Care API URL must be a valid HTTP or HTTPS URL."
             )
         streamer = CareStreamer(
             hass,
@@ -288,6 +289,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         hass.data[DOMAIN]["care_streamer"] = streamer
         await streamer.async_start()
+        hass.data[DOMAIN]["care_backup_credentials"] = (care_api_url, care_api_key)
+        async_notify_backup_listeners(hass)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     register_services(hass, entry)
@@ -370,43 +373,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-def _deploy_latest_config_sync(hass: HomeAssistant):
-    """Synchronous helper for deploying config."""
-    integration_dir = os.path.dirname(os.path.abspath(__file__))
-
-    source_themes_dir = os.path.join(integration_dir, "themes")
-    source_blueprints_dir = os.path.join(integration_dir, "blueprints")
-    source_dir = os.path.join(integration_dir, "www/oasira_b2b")
-
-    target_themes_dir = hass.config.path("themes")
-    target_dir = hass.config.path("www/oasira_b2b")
-    target_blueprints_dir = hass.config.path("blueprints")
-
-    # Ensure destination directories exist
-    os.makedirs(target_themes_dir, exist_ok=True)
-    os.makedirs(target_dir, exist_ok=True)
-    os.makedirs(target_blueprints_dir, exist_ok=True)
-
-    # Copy entire themes directory including subfolders and files
-    if os.path.exists(source_themes_dir):
-        shutil.copytree(source_themes_dir, target_themes_dir, dirs_exist_ok=True)
-
-    if os.path.exists(source_blueprints_dir):
-        shutil.copytree(
-            source_blueprints_dir, target_blueprints_dir, dirs_exist_ok=True
-        )
-
-    if os.path.exists(source_dir):
-        shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
-
-
-async def deploy_latest_config(hass: HomeAssistant):
-    """Deploy latest: theme, cards, blueprints, etc."""
-    _LOGGER.info("[Oasira] Deploying latest configuration files...")
-    await hass.async_add_executor_job(_deploy_latest_config_sync, hass)
-    _LOGGER.info("[Oasira] Configuration deployment complete.")
-
-
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
 
@@ -417,6 +383,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     )
     if not unloaded:
         return False
+
+    if hass.data.get(DOMAIN, {}).pop("care_backup_credentials", None) is not None:
+        async_notify_backup_listeners(hass)
 
     streamer = hass.data.get(DOMAIN, {}).pop("care_streamer", None)
     if streamer is not None:
@@ -483,7 +452,29 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     )
     async_register_admin_service(
         hass,
+        "oasira",
+        "update_entity",
+        update_entity,
+        schema=vol.Schema(
+            {
+                vol.Required("entity_id"): cv.entity_id,
+                vol.Required("area_id"): vol.Any(cv.string, None),
+            }
+        ),
+    )
+    async_register_admin_service(
+        hass,
         DOMAIN,
+        "add_label_to_entity",
+        add_label_to_entity,
+        schema=vol.Schema(
+            {vol.Required("entity_id"): cv.entity_id, vol.Required("label"): cv.string}
+        ),
+    )
+    # Keep actions from older deployed frontend assets working.
+    async_register_admin_service(
+        hass,
+        "oasira",
         "add_label_to_entity",
         add_label_to_entity,
         schema=vol.Schema(
@@ -537,6 +528,11 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         "update_entity",
     ):
         entry.async_on_unload(_service_unloader(service))
+
+    for service in ("add_label_to_entity", "update_entity"):
+        entry.async_on_unload(
+            lambda service=service: hass.services.async_remove("oasira", service)
+        )
 
     def _clear_in_bed_entities() -> None:
         domain_data = hass.data.get(DOMAIN, {})

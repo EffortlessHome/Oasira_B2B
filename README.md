@@ -49,7 +49,7 @@ and optional Care streaming require network access to Oasira Care.
 The integration supports one configured hub per Home Assistant instance. In
 the integration setup form, provide:
 
-- **API URL**: the HTTPS Oasira Care API base URL, with or without a trailing `/v1`.
+- **API URL**: the Oasira Care API base URL using HTTP or HTTPS, with or without a trailing `/v1`.
 - **Enrollment code**: a one-time code issued from Oasira Care's facility hub
   provisioning workflow.
 - **Hub name**: optional; defaults to the Home Assistant location name.
@@ -119,11 +119,15 @@ panel obtains bridge information from the Matter Hub API on the local network.
 - Frontend assets: `custom_components/oasira_b2b/www/oasira_b2b/`
 - Theme: `custom_components/oasira_b2b/themes/`
 
+### Configuration Backups
+
+Once the node is enrolled (or the Care API URL/key options are set), **Oasira Care** appears as a backup location in Home Assistant's native backup feature (Settings → System → Backups). Select it as a location in the automatic backup settings, or when creating a manual backup. Home Assistant creates, encrypts, schedules and prunes the backups (retention is configured in HA), and restoring from an Oasira Care backup uses HA's normal restore flow. Backups are stored in the Care API, which limits uploads to 100 MB; larger backups fail with an error.
+
 ## Requirements
 
-- Home Assistant with config flow support
-- Recorder integration
-- Network access to Oasira Care for enrollment and cloud-backed features
+- Home Assistant **2025.1+**
+- `recorder` integration enabled
+- Internet connection for cloud features
 - Optional Care API URL and facility ingest key for Care API streaming
 
 Python requirements are declared in

@@ -23,7 +23,7 @@
       }
     },
     "error": {
-      "invalid_url": "Enter a valid HTTPS URL",
+      "invalid_url": "Enter a valid URL using http or https",
       "invalid_code": "The enrollment code is invalid, expired or already used.",
       "cannot_connect": "Unable to reach the Oasira Care API. Check the URL and network.",
       "unknown": "An unexpected error occurred. Please try again later."
@@ -49,14 +49,11 @@
     },
     "error": {
       "care_api_incomplete": "Enter both the Care API URL and the ingest key, or leave both empty.",
-      "invalid_url": "URL must be a valid HTTPS URL"
+      "invalid_url": "URL must use http or https and include a valid host"
     }
   },
   "services": {
-    "clean_motion_files": {
-      "name": "Clean motion files",
-      "description": "Clean motion files older than specified number of days"
-    },
+
     "add_label_to_entity": {
       "name": "Add label to entity",
       "description": "Add a label to an entity"
@@ -73,10 +70,7 @@
       "name": "Update entity",
       "description": "Update an entity in the entity registry with an area"
     },
-    "deploy_latest_config": {
-      "name": "Deploy latest config",
-      "description": "Deploy latest Oasira configuration files (themes, blueprints, cards)"
-    },
+
     "set_in_bed_state": {
       "name": "Set in-bed state",
       "description": "Update the in-bed binary sensor for an area"

@@ -37,10 +37,7 @@
     }
   },
   "services": {
-    "clean_motion_files": {
-      "name": "Clean motion files",
-      "description": "Clean motion files older than specified number of days"
-    },
+
     "add_label_to_entity": {
       "name": "Add label to entity",
       "description": "Add a label to an entity"
@@ -65,10 +62,7 @@
       "name": "Update entity",
       "description": "Update an entity in the entity registry with an area"
     },
-    "deploy_latest_config": {
-      "name": "Deploy latest config",
-      "description": "Deploy latest Oasira configuration files (themes, blueprints, cards)"
-    },
+
     "create_event": {
       "name": "Create event",
       "description": "Create an event for the active alarm"

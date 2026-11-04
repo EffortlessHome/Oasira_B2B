@@ -18,7 +18,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .care_stream import (
     CONF_CARE_API_KEY,
     CONF_CARE_API_URL,
-    is_secure_care_api_url,
+    is_valid_care_api_url,
 )
 from .const import DOMAIN
 
@@ -73,7 +73,7 @@ def _normalize_url(value: str) -> str | None:
     url = (value or "").strip().rstrip("/")
     if url.endswith("/v1"):
         url = url[:-3]
-    return url if is_secure_care_api_url(url) else None
+    return url if is_valid_care_api_url(url) else None
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -208,7 +208,7 @@ class OasiraOptionsFlow(config_entries.OptionsFlow):
             key = (user_input.get(CONF_CARE_API_KEY) or "").strip()
             if bool(url) != bool(key):
                 errors["base"] = "care_api_incomplete"
-            elif url and not is_secure_care_api_url(url):
+            elif url and not is_valid_care_api_url(url):
                 errors[CONF_CARE_API_URL] = "invalid_url"
             else:
                 return self.async_create_entry(

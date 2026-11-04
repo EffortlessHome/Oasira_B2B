@@ -35,12 +35,12 @@ REQUEST_TIMEOUT = ClientTimeout(total=15)
 IGNORED_STATES = {"unknown", ""}
 
 
-def is_secure_care_api_url(url: str) -> bool:
-    """Return whether a Care API base URL uses HTTPS without embedded credentials."""
+def is_valid_care_api_url(url: str) -> bool:
+    """Return whether a Care API base URL uses HTTP(S) without embedded credentials."""
     try:
         parsed = urlsplit(url)
         return (
-            parsed.scheme == "https"
+            parsed.scheme in {"http", "https"}
             and bool(parsed.hostname)
             and parsed.username is None
             and parsed.password is None
