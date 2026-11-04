@@ -76,47 +76,9 @@ The `oasira_b2b` domain registers these services:
 Service field definitions are in
 [`custom_components/oasira_b2b/services.yaml`](custom_components/oasira_b2b/services.yaml).
 
-## Frontend panels
-
-The packaged panels are:
-
-- `config-panel.js`: account controls and Matter Hub bridge information, with a
-  factory reset action for each bridge.
-- `area-panel.js`: filter entities by domain and drag entities between areas.
-- `label-panel.js`: filter entities by domain and drag entities to labels.
-
-To expose these as sidebar panels, make sure the files from
-`custom_components/oasira_b2b/www/oasira_b2b` are available under
-`/config/www/oasira_b2b`, then add the following to `configuration.yaml`:
-
-```yaml
-panel_custom:
-  - name: oasira-config-panel
-    sidebar_title: Oasira Config
-    sidebar_icon: mdi:alpha-e-box-outline
-    url_path: oasira-config-panel
-    module_url: /local/oasira_b2b/config-panel.js
-
-  - name: oasira-area-panel
-    sidebar_title: Device Areas
-    sidebar_icon: mdi:home-group
-    url_path: oasira-area-panel
-    module_url: /local/oasira_b2b/area-panel.js
-
-  - name: oasira-label-panel
-    sidebar_title: Entity Labels
-    sidebar_icon: mdi:label
-    url_path: oasira-label-panel
-    module_url: /local/oasira_b2b/label-panel.js
-```
-
-Restart Home Assistant after changing the panel configuration. The Matter
-panel obtains bridge information from the Matter Hub API on the local network.
-
 ## Included resources
 
 - Automation blueprints: `custom_components/oasira_b2b/blueprints/`
-- Frontend assets: `custom_components/oasira_b2b/www/oasira_b2b/`
 - Theme: `custom_components/oasira_b2b/themes/`
 
 ### Configuration Backups
