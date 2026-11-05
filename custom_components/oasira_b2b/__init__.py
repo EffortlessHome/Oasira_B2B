@@ -499,9 +499,6 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             }
         ),
     )
-    async_register_admin_service(
-        hass, DOMAIN, "deploy_latest_config", handle_deploy_latest_config
-    )
 
     def _service_unloader(service_name: str) -> Callable[[], None]:
         def _remove_service() -> None:
