@@ -481,15 +481,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             {vol.Required("entity_id"): cv.entity_id, vol.Required("label"): cv.string}
         ),
     )
-    async_register_admin_service(
-        hass,
-        DOMAIN,
-        "clean_motion_files",
-        clean_motion_files,
-        schema=vol.Schema(
-            {vol.Optional("age", default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))}
-        ),
-    )
+
     hass.services.async_register(
         DOMAIN,
         "confirm_pending_alarm",
@@ -519,11 +511,9 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     for service in (
         "add_label_to_entity",
-        "clean_motion_files",
         "confirm_pending_alarm",
         "create_alert",
         "create_event",
-        "deploy_latest_config",
         "set_in_bed_state",
         "update_entity",
     ):
@@ -604,40 +594,6 @@ async def confirm_pending_alarm(call: ServiceCall) -> None:
         _LOGGER.error("Failed to confirm pending alarm: %s", err)
         raise HomeAssistantError("Failed to confirm pending alarm") from err
 
-
-def _clean_motion_files_sync(snapshots_dir: str, age_days: int) -> int:
-    """Delete regular snapshot files older than age_days without following symlinks."""
-    if not os.path.isdir(snapshots_dir):
-        return 0
-
-    cutoff = time.time() - age_days * 86400
-    deleted = 0
-    for root, _, files in os.walk(snapshots_dir, followlinks=False):
-        for name in files:
-            file_path = os.path.join(root, name)
-            try:
-                if os.path.islink(file_path):
-                    continue
-                if os.path.getmtime(file_path) < cutoff:
-                    os.remove(file_path)
-                    deleted += 1
-            except OSError:
-                _LOGGER.warning("Unable to remove an expired snapshot file")
-    return deleted
-
-
-async def clean_motion_files(call: ServiceCall) -> None:
-    """Delete old snapshot files outside the event loop."""
-    age_days = call.data.get("age", 30)
-    deleted = await call.hass.async_add_executor_job(
-        _clean_motion_files_sync, "/media/snapshots", age_days
-    )
-    _LOGGER.info("Removed %s expired snapshot files", deleted)
-
-
-async def handle_deploy_latest_config(call: ServiceCall) -> None:
-    """Deploy the packaged themes, blueprints, and frontend assets."""
-    await deploy_latest_config(call.hass)
 
 
 async def loaddevicegroups(calldata) -> None:
