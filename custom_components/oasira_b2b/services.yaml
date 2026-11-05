@@ -79,10 +79,6 @@ set_in_bed_state:
       selector:
         boolean:
 
-deploy_latest_config:
-  description: Copy the packaged themes, blueprints, and frontend assets to Home Assistant.
-
-
 # Create event service
 create_event:
   target: {}

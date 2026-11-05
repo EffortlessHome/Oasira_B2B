@@ -50,14 +50,6 @@
       "name": "Confirm pending alarm",
       "description": "Confirm a pending Oasira alarm"
     },
-    "cancel_alarm": {
-      "name": "Cancel alarm",
-      "description": "Cancel an active Oasira alarm"
-    },
-    "get_alarm_status": {
-      "name": "Get alarm status",
-      "description": "Get the current Oasira alarm status"
-    },
     "update_entity": {
       "name": "Update entity",
       "description": "Update an entity in the entity registry with an area"

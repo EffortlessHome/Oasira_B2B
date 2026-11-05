@@ -70,8 +70,10 @@ The `oasira_b2b` domain registers these services:
 | --- | --- |
 | `create_event` | Send an event for an eligible entity associated with an active Oasira alarm. |
 | `create_alert` | Create or update an alert with a type, description, and status. |
-| `update_entity` | Assign an entity to an area; used by the area panel. Administrator only. |
-| `add_label_to_entity` | Add a label to an entity; used by the label panel. Administrator only. |
+| `update_entity` | Assign an entity to an area. Administrator only. |
+| `add_label_to_entity` | Add a label to an entity. Administrator only. |
+| `confirm_pending_alarm` | Confirms a pending alarm. |
+| `set_in_bed_state` | Sets the in bed sensor state. |
 
 Service field definitions are in
 [`custom_components/oasira_b2b/services.yaml`](custom_components/oasira_b2b/services.yaml).

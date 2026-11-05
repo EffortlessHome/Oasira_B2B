@@ -5,7 +5,6 @@ from __future__ import annotations
 from functools import cached_property
 import logging
 import re
-import pytz
 
 from homeassistant.util.dt import as_local
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
@@ -27,7 +26,7 @@ import asyncio
 from datetime import datetime, timedelta
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import discovery
-from homeassistant.helpers.event import async_track_state_change
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.components.recorder.history import get_significant_states
 from homeassistant.const import STATE_ON, STATE_OFF
 
