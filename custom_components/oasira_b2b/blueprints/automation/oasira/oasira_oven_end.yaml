@@ -25,10 +25,6 @@ blueprint:
           step: 1.0
           mode: slider
 
-    notification_message:
-      name: Notification message
-      description: The notification message to send
-      default: Oven/Stove Turned Off
 
     additional_actions:
       name: Additional Actions
@@ -56,12 +52,6 @@ conditions:
       (previous_temp - current_temp ) >= input.numdegrees }}
 
 action:
-
-  - service: notify.oasira
-    continue_on_error: true
-    data:
-      title: Oven Ended
-      message: !input notification_message
 
   - choose: []
     continue_on_error: true

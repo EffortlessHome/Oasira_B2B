@@ -18,10 +18,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .auto_area import AutoArea
 from .const import DOMAIN, NAME
-from .motion_notification import MotionNotificationsSwitch
-from .renter_occupied import RenterOccupiedSwitch
-from .sleep_mode import SleepModeSwitch
 from .smart_appliance_conversion import SmartApplianceConversionSwitch
+from .sleep_mode import SleepModeSwitch
+
 from datetime import timedelta
 import asyncio
 from datetime import datetime, timedelta
@@ -54,6 +53,7 @@ async def async_setup_entry(
     )
 
     async_add_entities([PresenceSimulationSwitch(hass)])
+    async_add_entities([SleepModeSwitch()])
 
 
 class PresenceSimulationSwitch(SwitchEntity, RestoreEntity):

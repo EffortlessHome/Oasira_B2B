@@ -21,12 +21,10 @@ import aiohttp
 import voluptuous as vol
 
 from homeassistant.components.recorder import get_instance
-from homeassistant.components import frontend
 from homeassistant.config import get_default_config_dir
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
-from homeassistant.components import webhook
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.components.persistent_notification import create as notify_create
@@ -47,15 +45,13 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 import homeassistant.util.dt as dt_util
-from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.http.view import HomeAssistantView
-from homeassistant.components.frontend import add_extra_js_url
 
 ATTR_TITLE = "title"
 ATTR_DATA = "data"
 
 from .area_manager import AreaManager
 from .backup import async_notify_backup_listeners
+from .card import async_register_card
 from .care_stream import (
     CONF_CARE_API_KEY,
     CONF_CARE_API_URL,
@@ -241,21 +237,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning("Failed to fetch plan features: %s", pf_exc)
                 plan_features = None
 
-    hass.data[DOMAIN] = {
-        "entry_id": entry.entry_id,
-        "config_entry": entry,
-        "emailaddress": parsed_data.get("emailaddress"),
-        "ha_token": parsed_data.get("ha_token"),
-        "ha_url": parsed_data.get("ha_url"),
-        "systemid": system_id,
-        "customerid": customer_id,
-        "id_token": id_token,
-        "refresh_token": entry.data.get("refresh_token"),
-        "DaysHistoryToKeep": parsed_data.get("DaysHistoryToKeep"),
-        "testmode": parsed_data.get("testmode"),
-        "plan": parsed_data.get("name"),
-        "plan_features": plan_features,
-    }
+    hass.data[DOMAIN].update(
+        {
+            "entry_id": entry.entry_id,
+            "config_entry": entry,
+            "emailaddress": parsed_data.get("emailaddress"),
+            "ha_token": parsed_data.get("ha_token"),
+            "ha_url": parsed_data.get("ha_url"),
+            "systemid": system_id,
+            "customerid": customer_id,
+            "id_token": id_token,
+            "refresh_token": entry.data.get("refresh_token"),
+            "DaysHistoryToKeep": parsed_data.get("DaysHistoryToKeep"),
+            "testmode": parsed_data.get("testmode"),
+            "plan": parsed_data.get("name"),
+            "plan_features": plan_features,
+        }
+    )
 
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
@@ -294,8 +292,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     register_services(hass, entry)
+    await async_register_card(hass)
 
-    # Removed deploy_latest_config(hass) from initialization. Now triggered by button entity.
     label_registry = lr.async_get(hass)
 
     for desired in LABELS:
@@ -436,8 +434,7 @@ async def add_label_to_entity(call: ServiceCall) -> None:
 def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register Oasira services."""
 
-    hass.services.async_register(DOMAIN, "create_event", create_event)
-    hass.services.async_register(DOMAIN, "create_alert", create_alert)
+
     async_register_admin_service(
         hass,
         DOMAIN,
@@ -481,21 +478,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             {vol.Required("entity_id"): cv.entity_id, vol.Required("label"): cv.string}
         ),
     )
-    async_register_admin_service(
-        hass,
-        DOMAIN,
-        "clean_motion_files",
-        clean_motion_files,
-        schema=vol.Schema(
-            {vol.Optional("age", default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650))}
-        ),
-    )
-    hass.services.async_register(
-        DOMAIN,
-        "confirm_pending_alarm",
-        confirm_pending_alarm,
-        schema=vol.Schema({vol.Optional("entity_id"): cv.entity_id}),
-    )
+
     hass.services.async_register(
         DOMAIN,
         "set_in_bed_state",
@@ -507,9 +490,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             }
         ),
     )
-    async_register_admin_service(
-        hass, DOMAIN, "deploy_latest_config", handle_deploy_latest_config
-    )
+
 
     def _service_unloader(service_name: str) -> Callable[[], None]:
         def _remove_service() -> None:
@@ -519,11 +500,6 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     for service in (
         "add_label_to_entity",
-        "clean_motion_files",
-        "confirm_pending_alarm",
-        "create_alert",
-        "create_event",
-        "deploy_latest_config",
         "set_in_bed_state",
         "update_entity",
     ):
@@ -578,67 +554,6 @@ async def set_in_bed_state(call: ServiceCall) -> None:
     sensor.set_state(call.data["state"])
 
 
-async def confirm_pending_alarm(call: ServiceCall) -> None:
-    """Confirm a pending alarm through the Oasira API."""
-    hass = call.hass
-    system_id = hass.data.get(DOMAIN, {}).get("systemid")
-    if not system_id:
-        raise HomeAssistantError("Oasira account authentication is not configured")
-    if not await ensure_valid_id_token(hass):
-        raise HomeAssistantError("Could not obtain a valid Oasira API token")
-
-    async def _confirm() -> Any:
-        id_token = hass.data[DOMAIN].get("id_token")
-        if not id_token:
-            raise OasiraAPIError("Missing id_token for confirm_pending_alarm")
-        async with OasiraAPIClient(
-            system_id=system_id,
-            id_token=id_token,
-            session=async_get_clientsession(hass),
-        ) as client:
-            return await client.confirm_pending_alarm()
-
-    try:
-        await safe_api_call(hass, _confirm)
-    except OasiraAPIError as err:
-        _LOGGER.error("Failed to confirm pending alarm: %s", err)
-        raise HomeAssistantError("Failed to confirm pending alarm") from err
-
-
-def _clean_motion_files_sync(snapshots_dir: str, age_days: int) -> int:
-    """Delete regular snapshot files older than age_days without following symlinks."""
-    if not os.path.isdir(snapshots_dir):
-        return 0
-
-    cutoff = time.time() - age_days * 86400
-    deleted = 0
-    for root, _, files in os.walk(snapshots_dir, followlinks=False):
-        for name in files:
-            file_path = os.path.join(root, name)
-            try:
-                if os.path.islink(file_path):
-                    continue
-                if os.path.getmtime(file_path) < cutoff:
-                    os.remove(file_path)
-                    deleted += 1
-            except OSError:
-                _LOGGER.warning("Unable to remove an expired snapshot file")
-    return deleted
-
-
-async def clean_motion_files(call: ServiceCall) -> None:
-    """Delete old snapshot files outside the event loop."""
-    age_days = call.data.get("age", 30)
-    deleted = await call.hass.async_add_executor_job(
-        _clean_motion_files_sync, "/media/snapshots", age_days
-    )
-    _LOGGER.info("Removed %s expired snapshot files", deleted)
-
-
-async def handle_deploy_latest_config(call: ServiceCall) -> None:
-    """Deploy the packaged themes, blueprints, and frontend assets."""
-    await deploy_latest_config(call.hass)
-
 
 async def loaddevicegroups(calldata) -> None:
     """Load device groups."""
@@ -646,120 +561,3 @@ async def loaddevicegroups(calldata) -> None:
     await async_setup_devicegroup(hass)
 
 
-async def create_event(call: ServiceCall) -> None:
-    """Create event."""
-    hass = HASSComponent.get_hass()
-
-    entity_id = call.data.get("entity_id")
-    if not entity_id:
-        _LOGGER.error("entity_id is required for create_event service")
-        return
-
-    devicestate = hass.states.get(entity_id)
-    sensor_device_class = None
-    sensor_device_name = None
-
-    if devicestate and devicestate.attributes.get("friendly_name"):
-        sensor_device_name = devicestate.attributes["friendly_name"]
-
-    if devicestate and devicestate.attributes.get("device_class"):
-        sensor_device_class = devicestate.attributes["device_class"]
-
-    if sensor_device_class is not None and sensor_device_name is not None:
-        alarmstate = hass.data[DOMAIN].get("alarm_id")
-
-        if alarmstate and alarmstate != "":
-            alarmstatus = hass.data[DOMAIN].get("alarmstatus")
-
-            if alarmstatus == "ACTIVE":
-                alarmid = alarmstate
-
-                # Call the API to create event
-                systemid = hass.data[DOMAIN].get("systemid")
-                id_token = hass.data[DOMAIN].get("id_token")
-
-                event_data = {
-                    "sensor_device_class": sensor_device_class,
-                    "sensor_device_name": sensor_device_name,
-                }
-
-                if not await ensure_valid_id_token(hass):
-                    _LOGGER.error("Cannot create event: invalid or expired id_token")
-                    return None
-
-                async def _run_create_event() -> Any:
-                    id_token = hass.data[DOMAIN].get("id_token")
-                    if not id_token:
-                        raise OasiraAPIError("Missing id_token for create_event")
-                    async with OasiraAPIClient(
-                        system_id=systemid,
-                        id_token=id_token,
-                        session=async_get_clientsession(hass),
-                    ) as api_client:
-                        return await api_client.create_event(alarmid, event_data)
-
-                try:
-                    result = await safe_api_call(hass, _run_create_event)
-                    return result
-                except OasiraAPIError as e:
-                    _LOGGER.error("Failed to create event: %s", e)
-                    return None
-            return None
-        return None
-    return None
-
-# Keep old name for backward compatibility
-async def createevent(calldata) -> None:
-    """Create event (deprecated name)."""
-    await create_event(calldata)
-
-async def create_alert(call: ServiceCall) -> None:
-    """Create alert."""
-    hass = HASSComponent.get_hass()
-    alert_type = call.data.get("alert_type")
-    alert_description = call.data.get("alert_description")
-    status = call.data.get("status")
-
-    if not alert_type or not alert_description or not status:
-        _LOGGER.error(
-            "alert_type, alert_description, and status are required for create_alert service"
-        )
-        return
-
-    alert_data = {
-        "alert_type": alert_type,
-        "alert_description": alert_description,
-        "status": status,
-    }
-
-    # Call the API to create alert
-    systemid = hass.data[DOMAIN].get("systemid")
-    id_token = hass.data[DOMAIN].get("id_token")
-
-    if not await ensure_valid_id_token(hass):
-        _LOGGER.error("Cannot create alert: invalid or expired id_token")
-        return None
-
-    async def _run_create_alert() -> Any:
-        id_token = hass.data[DOMAIN].get("id_token")
-        if not id_token:
-            raise OasiraAPIError("Missing id_token for create_alert")
-        async with OasiraAPIClient(
-            system_id=systemid,
-            id_token=id_token,
-            session=async_get_clientsession(hass),
-        ) as api_client:
-            return await api_client.create_alert(alert_data)
-
-    try:
-        result = await safe_api_call(hass, _run_create_alert)
-        return result
-    except OasiraAPIError as e:
-        _LOGGER.error("Failed to create alert: %s", e)
-        return None
-
-
-# Keep old name for backward compatibility
-async def createalert(calldata) -> None:
-    """Create alert (deprecated name)."""
-    await create_alert(calldata)

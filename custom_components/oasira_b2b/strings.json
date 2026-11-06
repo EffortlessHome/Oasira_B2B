@@ -42,31 +42,16 @@
       "name": "Add label to entity",
       "description": "Add a label to an entity"
     },
-    "create_alert": {
-      "name": "Create alert",
-      "description": "Create an alert record"
-    },
-    "confirm_pending_alarm": {
-      "name": "Confirm pending alarm",
-      "description": "Confirm a pending Oasira alarm"
-    },
-    "cancel_alarm": {
-      "name": "Cancel alarm",
-      "description": "Cancel an active Oasira alarm"
-    },
-    "get_alarm_status": {
-      "name": "Get alarm status",
-      "description": "Get the current Oasira alarm status"
-    },
     "update_entity": {
       "name": "Update entity",
       "description": "Update an entity in the entity registry with an area"
     },
-
-    "create_event": {
-      "name": "Create event",
-      "description": "Create an event for the active alarm"
+    "set_in_bed_state": {
+      "name": "Set in-bed state",
+      "description": "Update the in-bed binary sensor for an area"
     }
+
+
   },
   "options": {
     "step": {

@@ -46,20 +46,7 @@ variables:
   displaytempindoor: "{{ states(indoortemp)  }}"
 
 action:
-  - service: notify.oasira
-    continue_on_error: true
-    data:
-      title: Climate Control Suggestion
-      message: >
-        The forecasted temperature for tomorrow is expected to be {{
-        displaytempupcoming }}°F, which is higher than the current indoor temperature
-        of {{ displaytempindoor }}°F. You may want to turn off the climate control.
-      data:
-        ttl: 0
-        priority: high
-        actions:
-          - action: TURNOFFCLIMATE
-            title: Turn Off Climate Device(s)
+
 
   - choose: []
     continue_on_error: true

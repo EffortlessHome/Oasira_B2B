@@ -32,7 +32,6 @@ async def async_setup_entry(
     HASSComponent.set_hass(hass)
     hass.data.setdefault(DOMAIN, {})["in_bed_add_entities"] = async_add_entities
 
-    async_add_entities([SleepingSensor()])
     async_add_entities([SomeoneHomeSensor()])
     async_add_entities([SmokeGroup()])
     async_add_entities([MoistureGroup()])
@@ -409,71 +408,6 @@ class SmokeGroup(BinarySensorEntity, RestoreEntity):
             sensor_state = "unknown"
 
 
-class SleepingSensor(BinarySensorEntity, RestoreEntity):
-    """Representation of a sensor."""
-
-    @property
-    def device_info(self):
-        """Return information about the device."""
-        return {
-            "identifiers": {(DOMAIN, NAME)},
-            "name": NAME,
-            "manufacturer": NAME,
-        }
-
-    async def async_added_to_hass(self):
-        self.async_on_remove(
-            self.hass.bus.async_listen(
-                "sleeping_switch_updated", self._handle_switch_event
-            )
-        )
-
-    async def _handle_switch_event(self, event):
-        self._state = "on" if event.data["is_on"] else "off"
-        self.async_write_ha_state()
-
-    def __init__(self) -> None:
-        """Initialize the sensor."""
-        self._state = "off"
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        return "Sleeping Sensor"
-
-    @property
-    def unique_id(self) -> str:
-        """Return the unique ID of the sensor."""
-        return "sleeping_sensor"
-
-    @property
-    def state(self):  # noqa: ANN201
-        """Return the state of the sensor."""
-        return self._state
-
-    @property
-    def icon(self):
-        # Return the specified icon or a default one
-        return "mdi:chat-sleep-outline"
-
-    def update(self) -> None:
-        """Fetch new state data for the sensor.
-
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        entity_id = "switch.sleep_mode"
-
-        # Get the state of the entity
-        state = self.hass.states.get(entity_id)
-
-        if state is not None:
-            # Get the state value (e.g., "on" or "off")
-            switch_state = state.state
-            _LOGGER.info(f"The state of {entity_id} is: {switch_state}")
-            self._state = switch_state
-        else:
-            self._state = "off"
-
 
 class SomeoneHomeSensor(BinarySensorEntity, RestoreEntity):
     """Representation of a sensor."""
@@ -504,20 +438,6 @@ class SomeoneHomeSensor(BinarySensorEntity, RestoreEntity):
             _LOGGER.debug(
                 "[SomeoneHomeSensor] No previous state found, using default 'off'."
             )
-        self.async_on_remove(
-            self.hass.bus.async_listen(
-                "sleeping_switch_updated", self._handle_switch_event
-            )
-        )
-        _LOGGER.debug("[SomeoneHomeSensor] Added to hass, registering event listener.")
-        try:
-            self.async_on_remove(
-                self.hass.bus.async_listen(
-                    "sleeping_switch_updated", self._handle_switch_event
-                )
-            )
-        except Exception as e:
-            _LOGGER.error(f"[SomeoneHomeSensor] Error registering event listener: {e}")
 
     async def _handle_switch_event(self, event):
         self._state = "on" if event.data["is_on"] else "off"

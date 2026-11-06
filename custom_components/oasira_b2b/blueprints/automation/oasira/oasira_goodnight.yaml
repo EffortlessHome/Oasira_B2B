@@ -80,11 +80,8 @@ blueprint:
         action: {}
     conditions:
       name: Conditions
-      description: List of conditions that must be true for this automation to run. Each condition is a Home Assistant condition block. By default, checks that binary_sensor.sleeping_sensor is off.
-      default:
-        - condition: state
-          entity_id: binary_sensor.sleeping_sensor
-          state: "off"
+      description: List of conditions that must be true for this automation to run. Each condition is a Home Assistant condition block. 
+
       selector:
         condition: {}
 trigger:
@@ -93,19 +90,7 @@ trigger:
 condition:
   !input conditions
 action:
-  - if:
-      - condition: or
-        conditions:
-          - condition: state
-            entity_id: !input window_sensor
-            state: "on"
-    then:
-      - service: notify.notify
-        continue_on_error: true
-        metadata: {}
-        data:
-          message: Door or Window Left Open
-    continue_on_error: true
+
   - action: switch.turn_on
     continue_on_error: true
     metadata: {}

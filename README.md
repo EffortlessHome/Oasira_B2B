@@ -16,13 +16,10 @@ provides local entities, automations, services, and optional Care API streaming.
 - Create motion and security sensor groups at startup and maintain the
   integration's standard labels.
 - Use the included automation blueprints for security, presence, lighting,
-  climate, cameras and AI-assisted notifications, calendars, appliances,
-  offline-device reports, and other household workflows.
+  climate, calendars, appliances, pool management, offline-device reports,
+  and other household workflows.
 - Use optional Care API streaming when a Care API URL and facility ingest key
   are configured.
-- Use the included frontend panels to assign entities to areas and labels, view
-  Matter Hub bridge status and pairing details, and access Home Assistant
-  account controls.
 
 The integration is cloud-connected (`cloud_polling`). Home Assistant
 automations and entity management run in Home Assistant; API-backed functions
@@ -68,10 +65,12 @@ The `oasira_b2b` domain registers these services:
 
 | Service | Purpose |
 | --- | --- |
-| `create_event` | Send an event for an eligible entity associated with an active Oasira alarm. |
-| `create_alert` | Create or update an alert with a type, description, and status. |
-| `update_entity` | Assign an entity to an area; used by the area panel. Administrator only. |
-| `add_label_to_entity` | Add a label to an entity; used by the label panel. Administrator only. |
+| `update_entity` | Assign an entity to an area. Administrator only. |
+| `add_label_to_entity` | Add a label to an entity. Administrator only. |
+| `set_in_bed_state` | Set the in-bed binary sensor state for an area. |
+
+For backward compatibility, `update_entity` and `add_label_to_entity` are also
+registered under the legacy `oasira` domain.
 
 Service field definitions are in
 [`custom_components/oasira_b2b/services.yaml`](custom_components/oasira_b2b/services.yaml).

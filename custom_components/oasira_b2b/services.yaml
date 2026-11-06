@@ -15,32 +15,6 @@ add_label_to_entity:
       selector:
         label:
 
-create_alert:
-  target: {}
-  fields:
-    alert_type:
-      description: The type of the alert
-      example: "Humidity Alert"
-      required: true
-      selector:
-        text:
-    alert_description:
-      description: Details about the alert
-      required: true
-      selector:
-        text:
-          multiline: true
-    status:
-      description: The status of the alert
-      example: "Active"
-      required: true
-      selector:
-        select:
-          options:
-            - "Active"
-            - "Resolved"
-            - "Acknowledged"
-
 update_entity:
   target: {}
   fields:
@@ -57,26 +31,6 @@ update_entity:
       selector:
         area:
 
-clean_motion_files:
-  fields:
-    age:
-      description: Delete snapshot files older than this many days
-      example: 30
-      default: 30
-      selector:
-        number:
-          min: 1
-          max: 3650
-          mode: box
-
-confirm_pending_alarm:
-  fields:
-    entity_id:
-      description: The alarm entity associated with the pending alarm
-      example: alarm_control_panel.oasira_security_alarm
-      selector:
-        entity:
-          domain: alarm_control_panel
 
 set_in_bed_state:
   fields:
@@ -91,17 +45,4 @@ set_in_bed_state:
       selector:
         boolean:
 
-deploy_latest_config:
-  description: Copy the packaged themes, blueprints, and frontend assets to Home Assistant.
 
-
-# Create event service
-create_event:
-  target: {}
-  fields:
-    entity_id:
-      description: The entity that triggered the event
-      example: "binary_sensor.front_door"
-      required: true
-      selector:
-        entity:

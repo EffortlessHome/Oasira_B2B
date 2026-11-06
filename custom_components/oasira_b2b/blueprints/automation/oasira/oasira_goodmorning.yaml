@@ -1,6 +1,6 @@
 blueprint:
   name: Good Morning
-  description: At morning, disarm alarm and turn off sleeping sensor
+  description: At morning, disarm alarm and turn off sleep mode
   domain: automation
   author: Oasira
   input:
@@ -14,7 +14,6 @@ blueprint:
     securityalarm:
       name: Security Alarm
       description: The security alarm to disarm
-      default: alarm_control_panel.oasira_security_alarm
       selector:
         entity:
           filter:

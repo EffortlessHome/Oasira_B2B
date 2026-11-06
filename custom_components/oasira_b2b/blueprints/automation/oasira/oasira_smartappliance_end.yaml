@@ -49,10 +49,6 @@ blueprint:
             - switch
           multiple: false
 
-    notification_message:
-      name: Notification message
-      description: "Default: Appliance Stopped"
-      default: Appliance Stopped
 
     additional_actions:
       name: Additional Actions
@@ -75,11 +71,7 @@ condition:
     state: "on"
 
 action:
-  - service: notify.oasira
-    continue_on_error: true
-    data:
-      title: !input notification_message
-      message: !input notification_message
+
 
   - action: switch.turn_off
     continue_on_error: true

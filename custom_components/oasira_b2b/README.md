@@ -2,94 +2,59 @@
 
 This directory contains the Home Assistant custom integration for Oasira Business.
 
-The integration combines cloud-backed Oasira system data with local Home Assistant automation services, conversation features, AI task features, timeline event workflows, and deployable UI resources.
+The integration provides local Home Assistant entities for security, presence,
+doors, windows, environmental monitoring, lights, covers, and switches, plus
+area and label management services, motion and security sensor groups, and
+optional Oasira Care API streaming and backup support.
 
 ## Functional Scope
 
-### Security and Alarm Operations
-
-* Multi-mode alarm workflows and alert management
-* Pending alarm confirmation and alarm cancellation services
-* Alarm status query services
-* Event creation services tied to active alarms
-
 ### Area and Entity Management
 
-* Entity-to-area update service
-* Label assignment service for entity organization
+* `update_entity` service to assign an entity to an area (administrator only)
+* `add_label_to_entity` service to add a label to an entity (administrator only)
 * Integration startup label bootstrap for Favorite and NotForSecurityMonitoring
+* `set_in_bed_state` service to update the in-bed binary sensor for an area
 
-### Notifications and Mobile Support
+### Sensors and Groups
 
-* Firebase configuration retrieval service for mobile app integration
-* Push token webhook flows and notification fanout support
+* Motion and security sensor groups created at startup
+* Presence, door, window, smoke, moisture, and carbon monoxide group sensors
+* Environmental sensors for illuminance, temperature, and humidity
 
-### Timeline and Camera Event Services
+### Care API Streaming and Backups
 
-* Capture camera snapshots and optionally persist timeline events
-* Record short camera clips and attach timeline metadata
-* Create person detection timeline events from supplied media
-* Query timeline events by camera, area, date range, and type
-* Update and delete timeline events
-
-### AI Capabilities
-
-* Conversation platform integration
-* AI task platform integration
-* Runtime connection to Ollama using configurable base URL and model
-* AI services:
-
-  * analyze\_image
-  * scan\_home\_automation\_patterns
+* Optional streaming of alerts and telemetry to an Oasira Care API when a Care API URL and facility ingest key are configured
+* Oasira Care appears as a backup location in Home Assistant's native backup feature once enrolled or once the Care API options are set
 
 ### Automation Assets and UX
 
-* Blueprint package under blueprints/automation with Oasira scenarios
-* Theme package under themes/
-* Frontend resources under www/oasira\_b2c/
-* Deployment service to copy packaged assets into Home Assistant config paths
+* Automation and script blueprints under `blueprints/` covering lighting, climate, calendars, appliances, pool management, presence, and offline-device reports
+* Theme under `themes/` (`Oasira.yaml`)
+* Websocket subscription (`oasira_b2b_updated`) registered during setup for custom Lovelace cards; no frontend JS assets are shipped with the integration
 
 ## Home Assistant Platforms
 
 The integration forwards setup to these platforms:
 
-* switch
-* binary\_sensor
-* sensor
-* cover
-* light
-* alarm\_control\_panel
-* button
-* conversation
-* ai\_task
+* `switch`
+* `binary_sensor`
+* `sensor`
+* `cover`
+* `light`
+* `stt` — account-based entries only; enrolled hub entries omit this platform
 
 ## Service Reference
 
-Primary service definitions are documented in services.yaml in this folder.
+Primary service definitions are documented in `services.yaml` in this folder.
 
-Operational services include:
+The `oasira_b2b` domain registers:
 
-* clean\_motion\_files
-* create\_event
-* cancel\_alarm
-* get\_alarm\_status
-* confirm\_pending\_alarm
-* create\_alert
-* update\_entity
-* deploy\_latest\_config
-* add\_label\_to\_entity
+* `update_entity`
+* `add_label_to_entity`
+* `set_in_bed_state`
 
-Timeline services include:
-
-* create\_timeline\_event
-* summarize\_timeline\_period
-
-
-
-AI services include:
-
-* analyze\_image
-* scan\_home\_automation\_patterns
+For backward compatibility, `update_entity` and `add_label_to_entity` are also registered under the legacy `oasira` domain.
 
 ## Installation
 
@@ -102,7 +67,7 @@ AI services include:
 
 ### Manual
 
-1. Copy this folder to custom\_components/oasira\_b2c
+1. Copy this folder to custom_components/oasira_b2b
 2. Restart Home Assistant
 3. Add Oasira Business from Settings > Devices and Services
 
@@ -111,12 +76,10 @@ AI services include:
 * Home Assistant with config flow support
 * Recorder integration enabled
 * Network access to Oasira cloud endpoints
-* Network access to configured Ollama endpoint for AI features
 
-Python dependencies are declared in manifest.json and installed automatically by Home Assistant.
+Python dependencies are declared in `manifest.json` and installed automatically by Home Assistant.
 
 ## Support
 
-* Issues: https://github.com/EffortlessHome/Oasira/issues
+* Issues: https://github.com/EffortlessHome/Oasira_b2b/issues
 * Website: https://www.oasira.ai/
-
