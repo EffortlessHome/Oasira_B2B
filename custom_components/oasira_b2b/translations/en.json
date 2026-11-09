@@ -40,20 +40,28 @@
     "step": {
       "init": {
         "title": "Oasira Options",
-        "description": "Stream alerts and telemetry from this Home Assistant to the Oasira Care API. Leave both fields empty to disable.",
+        "description": "Tune presence streaming to the Oasira Care API. Only high-signal events are sent (motion, doors, person, safety) plus one presence summary per area every few minutes. Adjust when to raise a no-movement alert.",
         "data": {
           "care_api_url": "Care API URL",
-          "care_api_key": "Facility ingest key"
+          "care_api_key": "Facility ingest key",
+          "no_movement_minutes": "No-movement threshold (minutes)",
+          "summary_interval_minutes": "Presence summary interval (minutes)"
+        },
+        "data_description": {
+          "no_movement_minutes": "Raise one no-movement alert per area after this much quiet time. Auto-resolves on next motion.",
+          "summary_interval_minutes": "How often to send a compact per-area presence summary (last movement, open doors, temp/humidity)."
         }
       }
     },
     "error": {
       "care_api_incomplete": "Enter both the Care API URL and the ingest key, or leave both empty.",
-      "invalid_url": "URL must use http or https and include a valid host"
+      "invalid_url": "URL must include the http or https scheme",
+      "invalid_intervals": "Thresholds must be whole minutes.",
+      "invalid_no_movement": "No-movement threshold must be 5 to 1440 minutes.",
+      "invalid_summary": "Summary interval must be 1 to 60 minutes."
     }
   },
   "services": {
-
     "add_label_to_entity": {
       "name": "Add label to entity",
       "description": "Add a label to an entity"
@@ -65,6 +73,10 @@
     "set_in_bed_state": {
       "name": "Set in-bed state",
       "description": "Update the in-bed binary sensor for an area"
+    },
+    "send_event": {
+      "name": "Send Care event",
+      "description": "Send a custom event to the Oasira Care API (telemetry for most types, alerts for safety types)."
     }
   }
 }

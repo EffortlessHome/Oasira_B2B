@@ -24,7 +24,12 @@ optional Oasira Care API streaming and backup support.
 
 ### Care API Streaming and Backups
 
-* Optional streaming of alerts and telemetry to an Oasira Care API when a Care API URL and facility ingest key are configured
+* Event-driven presence streaming to an Oasira Care API when a Care API URL and facility ingest key are configured. Only high-signal transitions are sent — not every state change:
+  * **Alerts** (`/ingest/alerts`): smoke, CO, gas, water, alarm, fall detected, panic button, low battery (binary + numeric, hysteresis), device offline (connectivity + prolonged unavailable), cold/heat, sound/vibration, firmware update, tamper/problem, plus derived `no_movement` (per area, configurable), `door_left_open` (after 5 min), `device_offline` (after 10 min), and hysteresis threshold alerts for temperature, humidity, CO₂ and PM2.5. All auto-resolve and are idempotent via `external_id`.
+  * **Discrete telemetry** (`/ingest/telemetry`): motion (debounced per area to at most one event per 5 min), door/window/garage opened/closed, person home/away (debounced), lock state, in-bed/out-of-bed, alarm arm/disarm, face-recognition detections, and HA `event` triggers (fall events become alerts).
+  * **Presence summaries**: one compact reading per area every `summary_interval_minutes` (default 5) with `last_movement_at`, `minutes_since_movement`, occupied/empty, open doors, lights/alarm/in-bed state, persons-at-home, averaged temp/humidity/CO₂, low-battery/offline counts, and `last_fall_at`. No per-reading temperature/humidity/power streaming.
+* Discovery is zero-config: sensors are matched by HA `device_class` and grouped by area. Assign an entity to an area and it is picked up automatically. Hidden, category, and disabled entities are skipped.
+* `send_event` service to push a custom event from an automation (safety types become alerts, everything else becomes telemetry).
 * Oasira Care appears as a backup location in Home Assistant's native backup feature once enrolled or once the Care API options are set
 
 ### Automation Assets and UX
@@ -53,6 +58,7 @@ The `oasira_b2b` domain registers:
 * `update_entity`
 * `add_label_to_entity`
 * `set_in_bed_state`
+* `send_event`
 
 For backward compatibility, `update_entity` and `add_label_to_entity` are also registered under the legacy `oasira` domain.
 

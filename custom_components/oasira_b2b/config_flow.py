@@ -18,6 +18,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .care_stream import (
     CONF_CARE_API_KEY,
     CONF_CARE_API_URL,
+    CONF_NO_MOVEMENT_MINUTES,
+    CONF_SUMMARY_INTERVAL_MINUTES,
+    DEFAULT_NO_MOVEMENT_MINUTES,
+    DEFAULT_SUMMARY_INTERVAL_MINUTES,
     is_valid_care_api_url,
 )
 from .const import DOMAIN
@@ -91,8 +95,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def async_supports_options_flow(config_entry: config_entries.ConfigEntry) -> bool:
-        """Node entries have nothing to configure; only legacy entries keep options."""
-        return not is_node_entry(config_entry)
+        """Both entry types can tune presence streaming (legacy also sets URL/key)."""
+        return True
 
     async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         """Collect the API URL and one-time enrollment code."""
@@ -197,38 +201,81 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OasiraOptionsFlow(config_entries.OptionsFlow):
-    """Configure streaming of alerts and telemetry to the Oasira Care API."""
+    """Configure presence streaming to the Oasira Care API."""
 
     async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
-        """Collect the Care API URL and facility ingest key."""
+        """Tune no-movement threshold + (legacy only) Care API URL and ingest key."""
         errors = {}
+        is_node = is_node_entry(self.config_entry)
 
         if user_input is not None:
-            url = (user_input.get(CONF_CARE_API_URL) or "").strip().rstrip("/")
-            key = (user_input.get(CONF_CARE_API_KEY) or "").strip()
-            if bool(url) != bool(key):
-                errors["base"] = "care_api_incomplete"
-            elif url and not is_valid_care_api_url(url):
-                errors[CONF_CARE_API_URL] = "invalid_url"
+            no_movement = user_input.get(CONF_NO_MOVEMENT_MINUTES)
+            summary = user_input.get(CONF_SUMMARY_INTERVAL_MINUTES)
+            try:
+                no_movement_minutes = int(no_movement)
+                summary_minutes = int(summary)
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_intervals"
+                no_movement_minutes = summary_minutes = None
             else:
+                if not 5 <= no_movement_minutes <= 1440:
+                    errors[CONF_NO_MOVEMENT_MINUTES] = "invalid_no_movement"
+                if not 1 <= summary_minutes <= 60:
+                    errors[CONF_SUMMARY_INTERVAL_MINUTES] = "invalid_summary"
+
+            if errors:
+                pass
+            elif is_node:
                 return self.async_create_entry(
-                    data={CONF_CARE_API_URL: url, CONF_CARE_API_KEY: key}
+                    data={
+                        CONF_NO_MOVEMENT_MINUTES: no_movement_minutes,
+                        CONF_SUMMARY_INTERVAL_MINUTES: summary_minutes,
+                    }
                 )
+            else:
+                url = (user_input.get(CONF_CARE_API_URL) or "").strip().rstrip("/")
+                key = (user_input.get(CONF_CARE_API_KEY) or "").strip()
+                if bool(url) != bool(key):
+                    errors["base"] = "care_api_incomplete"
+                elif url and not is_valid_care_api_url(url):
+                    errors[CONF_CARE_API_URL] = "invalid_url"
+                else:
+                    return self.async_create_entry(
+                        data={
+                            CONF_CARE_API_URL: url,
+                            CONF_CARE_API_KEY: key,
+                            CONF_NO_MOVEMENT_MINUTES: no_movement_minutes,
+                            CONF_SUMMARY_INTERVAL_MINUTES: summary_minutes,
+                        }
+                    )
 
         current = self.config_entry.options
+        schema = {
+            vol.Required(
+                CONF_NO_MOVEMENT_MINUTES,
+                default=current.get(
+                    CONF_NO_MOVEMENT_MINUTES, DEFAULT_NO_MOVEMENT_MINUTES
+                ),
+            ): vol.All(int, vol.Range(min=5, max=1440)),
+            vol.Required(
+                CONF_SUMMARY_INTERVAL_MINUTES,
+                default=current.get(
+                    CONF_SUMMARY_INTERVAL_MINUTES, DEFAULT_SUMMARY_INTERVAL_MINUTES
+                ),
+            ): vol.All(int, vol.Range(min=1, max=60)),
+        }
+        if not is_node:
+            schema[vol.Optional(
+                CONF_CARE_API_URL,
+                description={"suggested_value": current.get(CONF_CARE_API_URL, "")},
+            )] = str
+            schema[vol.Optional(
+                CONF_CARE_API_KEY,
+                description={"suggested_value": current.get(CONF_CARE_API_KEY, "")},
+            )] = str
+
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_CARE_API_URL,
-                        description={"suggested_value": current.get(CONF_CARE_API_URL, "")},
-                    ): str,
-                    vol.Optional(
-                        CONF_CARE_API_KEY,
-                        description={"suggested_value": current.get(CONF_CARE_API_KEY, "")},
-                    ): str,
-                }
-            ),
+            data_schema=vol.Schema(schema),
             errors=errors,
         )

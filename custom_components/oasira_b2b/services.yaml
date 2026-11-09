@@ -45,4 +45,37 @@ set_in_bed_state:
       selector:
         boolean:
 
+send_event:
+  description: Send a custom event to the Oasira Care API. Safety-like event types (smoke, carbon_monoxide, gas_leak, water_leak, security, no_movement, ...) become alerts; everything else becomes a telemetry reading.
+  fields:
+    event_type:
+      description: Event type to report (e.g. motion, door, person, no_movement, smoke)
+      example: "motion"
+      required: true
+      selector:
+        text:
+    entity_id:
+      description: Optional entity to attribute the event to
+      example: "binary_sensor.hallway_motion"
+      required: false
+      selector:
+        entity:
+    location:
+      description: Optional area/location label for the event
+      example: "Bedroom"
+      required: false
+      selector:
+        text:
+    value:
+      description: Optional value for telemetry events (e.g. open, closed, home, away)
+      example: "open"
+      required: false
+      selector:
+        text:
+    description:
+      description: Optional human-readable description
+      example: "Front door opened"
+      required: false
+      selector:
+        text:
 

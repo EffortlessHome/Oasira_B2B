@@ -55,6 +55,8 @@ from .card import async_register_card
 from .care_stream import (
     CONF_CARE_API_KEY,
     CONF_CARE_API_URL,
+    CONF_NO_MOVEMENT_MINUTES,
+    CONF_SUMMARY_INTERVAL_MINUTES,
     CareStreamer,
     is_valid_care_api_url,
 )
@@ -284,6 +286,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             care_api_url,
             care_api_key,
             on_auth_failed=(lambda: entry.async_start_reauth(hass)) if is_node else None,
+            no_movement_minutes=entry.options.get(
+                CONF_NO_MOVEMENT_MINUTES, 60
+            ),
+            summary_interval_minutes=entry.options.get(
+                CONF_SUMMARY_INTERVAL_MINUTES, 5
+            ),
         )
         hass.data[DOMAIN]["care_streamer"] = streamer
         await streamer.async_start()
@@ -491,6 +499,21 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         ),
     )
 
+    hass.services.async_register(
+        DOMAIN,
+        "send_event",
+        send_care_event,
+        schema=vol.Schema(
+            {
+                vol.Required("event_type"): cv.string,
+                vol.Optional("entity_id"): cv.string,
+                vol.Optional("location"): cv.string,
+                vol.Optional("value"): cv.string,
+                vol.Optional("description"): cv.string,
+            }
+        ),
+    )
+
 
     def _service_unloader(service_name: str) -> Callable[[], None]:
         def _remove_service() -> None:
@@ -501,6 +524,7 @@ def register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     for service in (
         "add_label_to_entity",
         "set_in_bed_state",
+        "send_event",
         "update_entity",
     ):
         entry.async_on_unload(_service_unloader(service))
@@ -552,6 +576,21 @@ async def set_in_bed_state(call: ServiceCall) -> None:
         return
 
     sensor.set_state(call.data["state"])
+
+
+async def send_care_event(call: ServiceCall) -> None:
+    """Send a custom event to the Oasira Care API via the active streamer."""
+    hass = call.hass
+    streamer = hass.data.get(DOMAIN, {}).get("care_streamer")
+    if streamer is None:
+        raise HomeAssistantError("Care streaming is not configured")
+    await streamer.async_send_event(
+        call.data["event_type"],
+        location=call.data.get("location"),
+        value=call.data.get("value"),
+        description=call.data.get("description"),
+        entity_id=call.data.get("entity_id"),
+    )
 
 
 

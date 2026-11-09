@@ -18,8 +18,12 @@ provides local entities, automations, services, and optional Care API streaming.
 - Use the included automation blueprints for security, presence, lighting,
   climate, calendars, appliances, pool management, offline-device reports,
   and other household workflows.
-- Use optional Care API streaming when a Care API URL and facility ingest key
-  are configured.
+- Use optional Care API presence streaming when enrolled (or when a Care
+  API URL and facility ingest key are configured). Only high-signal
+  transitions are sent — motion, doors, person, safety alerts and
+  `no_movement` alerts — plus one presence summary per area every few
+  minutes (`last_movement_at`, `minutes_since_movement`, open doors,
+  temp/humidity averages). See the integration README for details.
 
 The integration is cloud-connected (`cloud_polling`). Home Assistant
 automations and entity management run in Home Assistant; API-backed functions
@@ -68,6 +72,7 @@ The `oasira_b2b` domain registers these services:
 | `update_entity` | Assign an entity to an area. Administrator only. |
 | `add_label_to_entity` | Add a label to an entity. Administrator only. |
 | `set_in_bed_state` | Set the in-bed binary sensor state for an area. |
+| `send_event` | Send a custom Care API event (alert for safety types, telemetry otherwise). |
 
 For backward compatibility, `update_entity` and `add_label_to_entity` are also
 registered under the legacy `oasira` domain.
