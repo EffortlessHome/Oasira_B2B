@@ -220,7 +220,7 @@ class OasiraOptionsFlow(config_entries.OptionsFlow):
             else:
                 if not 5 <= no_movement_minutes <= 1440:
                     errors[CONF_NO_MOVEMENT_MINUTES] = "invalid_no_movement"
-                if not 1 <= summary_minutes <= 60:
+                if not 0 <= summary_minutes <= 1440:
                     errors[CONF_SUMMARY_INTERVAL_MINUTES] = "invalid_summary"
 
             if errors:
@@ -262,7 +262,7 @@ class OasiraOptionsFlow(config_entries.OptionsFlow):
                 default=current.get(
                     CONF_SUMMARY_INTERVAL_MINUTES, DEFAULT_SUMMARY_INTERVAL_MINUTES
                 ),
-            ): vol.All(int, vol.Range(min=1, max=60)),
+            ): vol.All(int, vol.Range(min=0, max=1440)),
         }
         if not is_node:
             schema[vol.Optional(

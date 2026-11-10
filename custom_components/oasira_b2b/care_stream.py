@@ -14,16 +14,22 @@ Care staff actually act on:
   Only transitions are sent, with per-area / per-entity debouncing so
   a chatty sensor cannot flood the API.
 * **Presence summaries** (``POST /ingest/telemetry``) -- one reading per
-  area every few minutes carrying ``last_movement_at``,
-  ``minutes_since_movement``, occupancy state, open doors/windows,
-  lights/alarm/in-bed state, person-at-home, averaged
-  temperature/humidity/CO2, low-battery and offline counts, and
-  ``last_fall_at``. This gives the dashboard a heartbeat without
-  streaming every numeric reading.
+  area, sent only when the area's presence state changes, carrying
+  ``last_movement_at``, ``minutes_since_movement``, occupancy state,
+  open doors/windows, lights/alarm/in-bed state, person-at-home,
+  averaged temperature/humidity/CO2, low-battery and offline counts,
+  and ``last_fall_at``. Continuous values are excluded from the change
+  detection, so they never trigger a send on their own.
 * **Derived alerts** -- computed locally: ``no_movement`` per area,
   ``door_left_open`` after 5 min, ``device_offline`` after 10 min
   unavailable, and hysteresis threshold alerts for battery, temperature,
   humidity, CO2 and PM2.5.
+
+Every reading is change-driven: a value is only sent when it differs
+from the last one sent for that device, so an unchanged state is never
+re-sent. Occurrence events (motion, face recognition, HA events and
+manual ``send_event`` calls) are exempt, because each of those is a
+distinct event rather than a state.
 
 Discovery is zero-config: sensors are matched by HA ``device_class``
 and resolved to areas via the entity/device registries. Assign an
@@ -59,7 +65,7 @@ CONF_NO_MOVEMENT_MINUTES = "no_movement_minutes"
 CONF_SUMMARY_INTERVAL_MINUTES = "summary_interval_minutes"
 
 DEFAULT_NO_MOVEMENT_MINUTES = 60
-DEFAULT_SUMMARY_INTERVAL_MINUTES = 5
+DEFAULT_SUMMARY_INTERVAL_MINUTES = 30
 
 FLUSH_INTERVAL = timedelta(seconds=30)
 NO_MOVEMENT_CHECK_INTERVAL = timedelta(seconds=30)
@@ -67,6 +73,9 @@ MOTION_DEBOUNCE = timedelta(minutes=5)
 PERSON_DEBOUNCE = timedelta(minutes=5)
 DOOR_FLAP_GUARD = timedelta(seconds=10)
 OCCUPANCY_CLEAR_DELAY = timedelta(seconds=60)
+# Minimum spacing between two presence summaries for the same area. State
+# changes that happen faster than this collapse into one summary.
+SUMMARY_MIN_SPACING = timedelta(minutes=1)
 BATCH_SIZE = 200
 MAX_QUEUED_TELEMETRY = 500
 MAX_QUEUED_ALERTS = 200
@@ -214,10 +223,12 @@ def build_alert(
             return None
         alert_type, severity = "security", "critical"
         description = f"Alarm triggered: {name}"
-    elif domain in ("binary_sensor", "input_boolean"):
+    elif domain in ("binary_sensor", "input_boolean", "input_button", "button"):
         heuristic = _heuristic_alert(state)
         if heuristic is not None:
-            if state.state != "on" and not resolved:
+            # Buttons fire with a timestamp as their state, so anything that
+            # is not a plain "off" counts as a press.
+            if state.state == "off" and not resolved:
                 return None
             alert_type, severity, description = heuristic
         else:
@@ -261,6 +272,9 @@ def build_alert(
 def alert_transition(old_state: State | None, new_state: State) -> str | None:
     """Return 'active' or 'resolved' when an entity enters or leaves an alert state."""
     domain = new_state.entity_id.split(".", 1)[0]
+    if domain in ("button", "input_button"):
+        # Presses are one-shot: the state is a timestamp, not a level.
+        return "active"
     if domain not in ("alarm_control_panel", "binary_sensor", "input_boolean", "event"):
         return None
     if domain == "event":
@@ -332,9 +346,14 @@ class CareStreamer:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._no_movement_minutes = max(5, int(no_movement_minutes or DEFAULT_NO_MOVEMENT_MINUTES))
-        self._summary_interval = timedelta(
-            minutes=max(1, int(summary_interval_minutes or DEFAULT_SUMMARY_INTERVAL_MINUTES))
+        # 0 disables the periodic refresh; summaries are then only sent when
+        # the presence state of an area actually changes.
+        summary_value = (
+            DEFAULT_SUMMARY_INTERVAL_MINUTES
+            if summary_interval_minutes is None
+            else int(summary_interval_minutes)
         )
+        self._summary_interval = timedelta(minutes=max(0, summary_value))
         self._telemetry: list[dict[str, Any]] = []
         self._alerts: list[dict[str, Any]] = []
         self._flush_lock = asyncio.Lock()
@@ -356,7 +375,13 @@ class CareStreamer:
         self._last_person_sent: dict[str, datetime] = {}
         self._last_door_sent: dict[str, datetime] = {}
         self._offline_reported: set[str] = set()
-        self._last_summary: datetime | None = None
+        # entity_id -> last telemetry value enqueued, so an unchanged state is
+        # never re-sent for the same device.
+        self._last_sent_value: dict[str, str] = {}
+        # area_id -> signature of the last presence summary that was sent.
+        self._summary_signature: dict[str, str] = {}
+        # area_id -> when the last presence summary was sent.
+        self._last_summary_sent: dict[str, datetime] = {}
         # entity_id -> when its current state began (for duration checks).
         self._state_changed_at: dict[str, datetime] = {}
         # (entity_id, alert_type) pairs currently active for numeric thresholds.
@@ -393,7 +418,7 @@ class CareStreamer:
         self._unsub_timer = async_track_time_interval(
             self._hass, self._async_tick, NO_MOVEMENT_CHECK_INTERVAL
         )
-        self._enqueue_all_summaries()
+        self._enqueue_all_summaries(force=True)
         self._schedule_flush()
         _LOGGER.info(
             "Care API presence streaming started (%d areas, no-movement %dmin, summary every %dmin)",
@@ -508,6 +533,8 @@ class CareStreamer:
         if domain == "light":
             # Cached for summaries only; never emits an event.
             return True
+        if domain in ("input_boolean", "input_button", "button"):
+            return _heuristic_alert(state) is not None
         return False
 
     def _discover(self) -> None:
@@ -588,10 +615,15 @@ class CareStreamer:
             return
         entity_id = new_state.entity_id
 
-        # Attribute-only updates carry no new signal.
+        # Attribute-only updates carry no new signal, but the underlying
+        # reading may have changed (e.g. a battery percentage).
         if old_state is not None and old_state.state == new_state.state:
-            if new_state.entity_id.split(".", 1)[0] == "sensor" and self._is_relevant(new_state):
-                self._cache_environment(new_state)
+            if (
+                new_state.entity_id.split(".", 1)[0] == "sensor"
+                and self._is_relevant(new_state)
+                and self._cache_environment(new_state)
+            ):
+                self._schedule_flush()
             return
 
         if not self._is_tracked(entity_id):
@@ -600,9 +632,15 @@ class CareStreamer:
             return
 
         # Offline / unknown transitions: report once so the device shows as
-        # offline in Care, then stay quiet until it returns.
+        # offline in Care, then stay quiet until it returns. Entities that do
+        # not stream readings are skipped: an "unavailable" reading would
+        # create a device that can never come back to active.
         if new_state.state in IGNORED_STATES:
-            if entity_id in self._known and self._known[entity_id] not in IGNORED_STATES:
+            if (
+                entity_id in self._known
+                and self._known[entity_id] not in IGNORED_STATES
+                and self._streams_readings(new_state)
+            ):
                 self._state_changed_at[entity_id] = new_state.last_changed
                 area = self._area(entity_id)
                 name = new_state.attributes.get("friendly_name") or entity_id
@@ -616,7 +654,9 @@ class CareStreamer:
                         "location": area.area_name if area.area_id != HUB_AREA_ID else None,
                         "recorded_at": new_state.last_changed.isoformat(),
                         "metadata": {"domain": entity_id.split(".", 1)[0]},
-                    }
+                    },
+                    dedupe=False,
+                    track=True,
                 )
                 self._offline_reported.add(entity_id)
                 self._schedule_flush()
@@ -627,6 +667,34 @@ class CareStreamer:
 
         if entity_id in self._offline_reported:
             self._offline_reported.discard(entity_id)
+            # Report the recovered state so Care flips the device back to
+            # active. Entities that have their own handler below report the
+            # recovery themselves, so they are skipped here to avoid sending
+            # the same recovery twice.
+            if not self._reports_itself(new_state):
+                area = self._area(entity_id)
+                name = new_state.attributes.get("friendly_name") or entity_id
+                canonical = self._canonical_reading(new_state)
+                sensor_type, value = (
+                    canonical
+                    if canonical is not None
+                    else (
+                        _device_class(new_state) or entity_id.split(".", 1)[0],
+                        new_state.state,
+                    )
+                )
+                self._enqueue_telemetry(
+                    {
+                        "entity_id": entity_id,
+                        "sensor_type": sensor_type,
+                        "value": value,
+                        "unit": new_state.attributes.get("unit_of_measurement"),
+                        "name": name,
+                        "location": area.area_name if area.area_id != HUB_AREA_ID else None,
+                        "recorded_at": new_state.last_changed.isoformat(),
+                        "metadata": {"domain": entity_id.split(".", 1)[0], "recovered": True},
+                    }
+                )
         # A sensor coming back online resolves a prolonged offline alert.
         if entity_id in self._offline_alerted:
             self._offline_alerted.discard(entity_id)
@@ -656,7 +724,7 @@ class CareStreamer:
         # Suppress duplicate "active" for sensors already active since startup.
         transition = alert_transition(old_state, new_state)
         is_alert_capable = domain == "alarm_control_panel" or (
-            domain in ("binary_sensor", "input_boolean")
+            domain in ("binary_sensor", "input_boolean", "input_button", "button")
             and (
                 dc in BINARY_ALERT_CLASSES
                 or dc in INVERTED_ALERT_CLASSES
@@ -731,7 +799,9 @@ class CareStreamer:
                             "person": person,
                             "kind": "face_recognition",
                         },
-                    }
+                    },
+                    dedupe=False,
+                    track=False,
                 )
                 urgent = True
 
@@ -821,7 +891,6 @@ class CareStreamer:
                     }
                 )
                 urgent = True
-
         # 9) Event entities (e.g. fall / press triggers).
         elif domain == "event":
             area = self._area(entity_id)
@@ -851,7 +920,9 @@ class CareStreamer:
                         "location": area.area_name if area.area_id != HUB_AREA_ID else None,
                         "recorded_at": new_state.last_changed.isoformat(),
                         "metadata": {"domain": "event"},
-                    }
+                    },
+                    dedupe=False,
+                    track=False,
                 )
             urgent = True
 
@@ -912,7 +983,12 @@ class CareStreamer:
                     "area_name": area.area_name,
                     "last_movement_at": state.last_changed.isoformat(),
                 },
-            }
+            },
+            # Motion is an occurrence, not a state: the value is always "on",
+            # so it must not be deduplicated or tracked. The per-area debounce
+            # above is what keeps it from flooding.
+            dedupe=False,
+            track=False,
         )
 
     def _on_door(self, area: AreaPresence, state: State, device_class: str) -> None:
@@ -1102,6 +1178,89 @@ class CareStreamer:
     def _any_on(self, entity_ids: set[str]) -> bool:
         return any(self._known.get(eid) == "on" for eid in entity_ids)
 
+    # -- canonical readings -------------------------------------------------
+
+    def _canonical_reading(self, state: State) -> tuple[str, str] | None:
+        """Return (sensor_type, value) for a state-like entity, else None.
+
+        State-like entities report a value that only changes when the state
+        changes, so they can be deduplicated. Occurrence-based entities
+        (motion, face recognition, HA events) report a new occurrence each
+        time and are handled separately.
+        """
+        entity_id = state.entity_id
+        domain = entity_id.split(".", 1)[0]
+        dc = _device_class(state)
+
+        if domain == "lock":
+            return ("lock", state.state)
+        if domain == "alarm_control_panel":
+            return ("security", state.state)
+        if domain in PERSON_DOMAINS:
+            return ("person", "home" if state.state == "home" else "away")
+        if domain == "binary_sensor":
+            if self._is_in_bed_entity(entity_id):
+                return ("in_bed", "in_bed" if state.state == "on" else "out_of_bed")
+            if entity_id == "binary_sensor.face_recognition":
+                return ("person", "detected" if state.state == "on" else "off")
+            if dc in DOOR_DEVICE_CLASSES:
+                sensor_type = "door" if dc in ("door", "opening") else "garage_door"
+                if dc == "window":
+                    sensor_type = "window"
+                return (sensor_type, "open" if state.state == "on" else "closed")
+            if dc == "lock":
+                return ("lock", "locked" if state.state == "on" else "unlocked")
+        return None
+
+    def _streams_readings(self, state: State) -> bool:
+        """Whether this entity normally produces telemetry readings.
+
+        Entities that only feed alerts or summaries (temperature, humidity,
+        battery, lights) must not get an ``unavailable`` reading: that would
+        create a device in Care that can never return to active.
+        """
+        entity_id = state.entity_id
+        domain = entity_id.split(".", 1)[0]
+        dc = _device_class(state)
+        if self._canonical_reading(state) is not None:
+            return True
+        if domain == "binary_sensor" and (
+            dc in MOTION_DEVICE_CLASSES or dc in OCCUPANCY_DEVICE_CLASSES
+        ):
+            return True
+        if entity_id == "binary_sensor.face_recognition":
+            return True
+        if domain == "event":
+            return True
+        return False
+
+    def _reports_itself(self, state: State) -> bool:
+        """Whether this entity's own handler will emit a reading for it.
+
+        Used to avoid sending the same recovery twice. Motion, occupancy and
+        face recognition only report their "on" transition, so a recovery back
+        to "off" has to be reported by the generic recovery path.
+        """
+        entity_id = state.entity_id
+        domain = entity_id.split(".", 1)[0]
+        dc = _device_class(state)
+        if domain == "event":
+            return True
+        if domain in ("lock", "alarm_control_panel"):
+            return True
+        if domain in PERSON_DOMAINS:
+            return True
+        if entity_id == "binary_sensor.face_recognition":
+            return state.state == "on"
+        if domain == "binary_sensor":
+            if self._is_in_bed_entity(entity_id):
+                return True
+            if dc in DOOR_DEVICE_CLASSES or dc == "lock":
+                return True
+            if dc in MOTION_DEVICE_CLASSES or dc in OCCUPANCY_DEVICE_CLASSES:
+                return state.state == "on"
+        return False
+
     # -- no-movement + summaries ------------------------------------------
 
     async def _async_tick(self, now: datetime) -> None:
@@ -1161,15 +1320,12 @@ class CareStreamer:
 
         # 4) Device offline for too long (promotes telemetry to an alert).
         for entity_id, value in list(self._known.items()):
-            if value not in ("unavailable", "unknown", "unavailable_requires_auth"):
-                # IGNORED_STATES are ("unknown", "", "unavailable"); match those.
-                if value not in IGNORED_STATES:
-                    continue
+            if value not in IGNORED_STATES:
+                continue
             if entity_id in self._offline_alerted:
                 continue
             # Only alert for sensors we actually track (not lights etc.).
-            domain = entity_id.split(".", 1)[0]
-            if domain == "light":
+            if entity_id.split(".", 1)[0] == "light":
                 continue
             since = self._state_changed_at.get(entity_id)
             if since is None or now - since < timedelta(minutes=OFFLINE_ALERT_MIN):
@@ -1188,10 +1344,9 @@ class CareStreamer:
                 }
             )
 
-        # 5) Presence summaries (heartbeat).
-        if self._last_summary is None or now - self._last_summary >= self._summary_interval:
-            self._last_summary = now
-            self._enqueue_all_summaries()
+        # 5) Presence summaries: only sent when the area's presence state
+        #    changed (plus an optional slow refresh of unchanged areas).
+        if self._enqueue_all_summaries(now):
             self._schedule_flush()
 
     def _resolve_no_movement(self, area: AreaPresence, now: datetime) -> None:
@@ -1209,10 +1364,104 @@ class CareStreamer:
                 }
             )
 
-    def _enqueue_all_summaries(self) -> None:
-        now = dt_util.utcnow()
+    def _enqueue_all_summaries(self, now: datetime | None = None, force: bool = False) -> int:
+        """Enqueue a presence summary per area, but only when it changed.
+
+        Continuous values (temperature, humidity, minutes since movement) are
+        deliberately excluded from the signature: they change on every tick and
+        would defeat the point. They still ride along in the payload of the
+        next summary that is sent.
+
+        Returns the number of summaries enqueued.
+        """
+        now = now or dt_util.utcnow()
+        sent = 0
         for area in self._areas.values():
+            signature = self._presence_signature(area, now)
+            previous = self._summary_signature.get(area.area_id)
+            changed = previous is None or previous != signature
+            last_sent = self._last_summary_sent.get(area.area_id)
+
+            if (
+                not force
+                and last_sent is not None
+                and now - last_sent < SUMMARY_MIN_SPACING
+            ):
+                # Too soon; the next tick picks it up.
+                continue
+            if not changed and not force and not self._heartbeat_due(now, last_sent):
+                continue
+
+            self._summary_signature[area.area_id] = signature
+            self._last_summary_sent[area.area_id] = now
             self._enqueue_summary(area, now)
+            sent += 1
+        return sent
+
+    def _heartbeat_due(self, now: datetime, last_sent: datetime | None) -> bool:
+        """Whether an unchanged area should be refreshed anyway."""
+        if self._summary_interval <= timedelta(0):
+            return False
+        if last_sent is None:
+            return True
+        return now - last_sent >= self._summary_interval
+
+    def _occupied(self, area: AreaPresence, now: datetime) -> bool:
+        """Whether an area currently counts as occupied."""
+        return bool(
+            area.occupancy_on
+            or area.motion_on
+            or (
+                area.last_movement is not None
+                and now - area.last_movement < timedelta(minutes=5)
+            )
+        )
+
+    def _area_offline_count(self, area_id: str) -> int:
+        """Number of tracked entities in an area that are unavailable."""
+        count = 0
+        for entity_id, value in self._known.items():
+            if value not in IGNORED_STATES:
+                continue
+            if entity_id.split(".", 1)[0] == "light":
+                continue
+            if self._entity_area.get(entity_id, (HUB_AREA_ID, ""))[0] == area_id:
+                count += 1
+        return count
+
+    def _presence_signature(self, area: AreaPresence, now: datetime) -> str:
+        """Fingerprint of the discrete presence state of an area.
+
+        Only state-like values are included, so the signature changes when
+        something meaningful happens (someone arrives, a door opens, the alarm
+        is armed) and not when a sensor merely reports a new number.
+        """
+        doors_open = sorted(
+            eid for eid in area.door_entity_ids if self._known.get(eid) == "on"
+        )
+        lights_on = (
+            self._any_on(area.light_entity_ids) if area.light_entity_ids else False
+        )
+        persons_home = sum(1 for home in self._person_home.values() if home)
+        low_battery = sorted(
+            eid
+            for eid, val in self._battery_readings.get(area.area_id, {}).items()
+            if val <= BATTERY_LOW_PCT
+        )
+        return "|".join(
+            (
+                "occupied" if self._occupied(area, now) else "empty",
+                f"occupancy={area.occupancy_on}",
+                f"in_bed={area.in_bed}",
+                f"lights={lights_on}",
+                f"alarm={self._alarm_state}",
+                f"persons={persons_home}",
+                f"doors={','.join(doors_open)}",
+                f"no_movement={area.no_movement_alert_active}",
+                f"low_battery={','.join(low_battery)}",
+                f"offline={self._area_offline_count(area.area_id)}",
+            )
+        )
 
     def _enqueue_summary(self, area: AreaPresence, now: datetime) -> None:
         """One compact reading per area with everything Care needs to show."""
@@ -1221,11 +1470,7 @@ class CareStreamer:
         if area.last_movement is not None:
             minutes_since = int((now - area.last_movement).total_seconds() // 60)
 
-        occupied = bool(
-            area.occupancy_on
-            or area.motion_on
-            or (area.last_movement is not None and now - area.last_movement < timedelta(minutes=5))
-        )
+        occupied = self._occupied(area, now)
         value = "occupied" if occupied else "empty"
 
         # Open doors/windows currently known to be open.
@@ -1248,11 +1493,7 @@ class CareStreamer:
             for eid, val in self._battery_readings.get(area.area_id, {}).items()
             if val <= BATTERY_LOW_PCT
         ]
-        offline_count = sum(
-            1
-            for eid, val in self._known.items()
-            if val in IGNORED_STATES and eid.split(".", 1)[0] != "light"
-        )
+        offline_count = self._area_offline_count(area.area_id)
 
         self._enqueue_telemetry(
             {
@@ -1289,7 +1530,8 @@ class CareStreamer:
                     "offline_count": offline_count,
                     "last_fall_at": self._last_fall.isoformat() if self._last_fall else None,
                 },
-            }
+            },
+            dedupe=False,
         )
 
     # -- manual events (service) -------------------------------------------
@@ -1339,15 +1581,41 @@ class CareStreamer:
                     "location": location,
                     "recorded_at": now.isoformat(),
                     "metadata": {"domain": "oasira", "kind": "manual_event"},
-                }
+                },
+                # Manual events are explicit requests: always deliver them
+                # and do not let them mask a later real state change.
+                dedupe=False,
+                track=False,
             )
         await self._async_flush()
 
     # -- queueing + delivery ------------------------------------------------
 
-    def _enqueue_telemetry(self, reading: dict[str, Any]) -> None:
+    def _enqueue_telemetry(
+        self, reading: dict[str, Any], dedupe: bool = True, track: bool = True
+    ) -> bool:
+        """Queue a telemetry reading.
+
+        With ``dedupe`` (the default for state-like readings) a reading whose
+        value is identical to the last one sent for the same entity is dropped,
+        so a device is never re-reported while it stays in the same state.
+
+        ``track`` controls whether the reading becomes the new "last sent
+        value" for the entity. It is turned off for pure occurrences (motion,
+        face recognition, HA events, manual events) whose value is always the
+        same and would otherwise mask the next real state change.
+        """
+        entity_id = reading.get("entity_id")
+        value = reading.get("value")
+        if entity_id is not None:
+            key = str(value)
+            if dedupe and self._last_sent_value.get(entity_id) == key:
+                return False
+            if track:
+                self._last_sent_value[entity_id] = key
         self._telemetry.append(reading)
         del self._telemetry[:-MAX_QUEUED_TELEMETRY]
+        return True
 
     def _enqueue_alert(self, alert: dict[str, Any]) -> None:
         self._alerts.append(alert)

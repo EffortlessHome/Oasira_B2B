@@ -57,6 +57,8 @@ from .care_stream import (
     CONF_CARE_API_URL,
     CONF_NO_MOVEMENT_MINUTES,
     CONF_SUMMARY_INTERVAL_MINUTES,
+    DEFAULT_NO_MOVEMENT_MINUTES,
+    DEFAULT_SUMMARY_INTERVAL_MINUTES,
     CareStreamer,
     is_valid_care_api_url,
 )
@@ -287,10 +289,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             care_api_key,
             on_auth_failed=(lambda: entry.async_start_reauth(hass)) if is_node else None,
             no_movement_minutes=entry.options.get(
-                CONF_NO_MOVEMENT_MINUTES, 60
+                CONF_NO_MOVEMENT_MINUTES, DEFAULT_NO_MOVEMENT_MINUTES
             ),
             summary_interval_minutes=entry.options.get(
-                CONF_SUMMARY_INTERVAL_MINUTES, 5
+                CONF_SUMMARY_INTERVAL_MINUTES, DEFAULT_SUMMARY_INTERVAL_MINUTES
             ),
         )
         hass.data[DOMAIN]["care_streamer"] = streamer

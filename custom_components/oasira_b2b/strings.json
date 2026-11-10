@@ -58,16 +58,16 @@
     "step": {
       "init": {
         "title": "Oasira Options",
-        "description": "Tune presence streaming to the Oasira Care API. Only high-signal events are sent (motion, doors, person, safety) plus one presence summary per area every few minutes. Adjust when to raise a no-movement alert.",
+        "description": "Tune presence streaming to the Oasira Care API. Updates are only sent when a state changes, so the hub stays quiet. Raise a no-movement alert after a quiet period, and set how often unchanged areas are refreshed.",
         "data": {
           "care_api_url": "Care API URL",
           "care_api_key": "Facility ingest key",
           "no_movement_minutes": "No-movement threshold (minutes)",
-          "summary_interval_minutes": "Presence summary interval (minutes)"
+          "summary_interval_minutes": "Unchanged-area refresh interval (minutes)"
         },
         "data_description": {
           "no_movement_minutes": "Raise one no-movement alert per area after this much quiet time. Auto-resolves on next motion.",
-          "summary_interval_minutes": "How often to send a compact per-area presence summary (last movement, open doors, temp/humidity)."
+          "summary_interval_minutes": "How often an area whose state did not change is re-sent, so Care keeps a heartbeat. Set to 0 to only send on state changes."
         }
       }
     },
@@ -76,7 +76,7 @@
       "invalid_url": "URL must include the http or https scheme",
       "invalid_intervals": "Thresholds must be whole minutes.",
       "invalid_no_movement": "No-movement threshold must be 5 to 1440 minutes.",
-      "invalid_summary": "Summary interval must be 1 to 60 minutes."
+      "invalid_summary": "The refresh interval must be 0 (only on change) to 1440 minutes."
     }
   }
 }

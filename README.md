@@ -19,11 +19,12 @@ provides local entities, automations, services, and optional Care API streaming.
   climate, calendars, appliances, pool management, offline-device reports,
   and other household workflows.
 - Use optional Care API presence streaming when enrolled (or when a Care
-  API URL and facility ingest key are configured). Only high-signal
-  transitions are sent — motion, doors, person, safety alerts and
-  `no_movement` alerts — plus one presence summary per area every few
-  minutes (`last_movement_at`, `minutes_since_movement`, open doors,
-  temp/humidity averages). See the integration README for details.
+  API URL and facility ingest key are configured). Updates are only sent when
+  a state actually changes — motion, doors, person, safety alerts and
+  `no_movement` alerts — plus a presence summary per area whenever the area's
+  presence state changes (`last_movement_at`, `minutes_since_movement`, open
+  doors, temp/humidity averages). Unchanged states are never re-sent. See the
+  integration README for details.
 
 The integration is cloud-connected (`cloud_polling`). Home Assistant
 automations and entity management run in Home Assistant; API-backed functions
